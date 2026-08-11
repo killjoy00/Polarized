@@ -21,6 +21,7 @@ rendering template literals into a single `#app` div. Supabase from CDN.
 
 ```
 polarized/     index.html, ads.txt   ← the deployed site root
+  privacy/     index.html          ← served at /privacy
 README.md
 .gitignore
 ```
