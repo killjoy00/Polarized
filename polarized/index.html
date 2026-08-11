@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Polarized</title>
+<meta name="theme-color" content="#141821">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;900&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<script>
+/* ══════════════════════════════════════════════════════════════
+   CONFIGURE — two lines, both from your existing foodfinder
+   project so this never hits the seven-day inactivity pause.
+
+   Supabase dashboard → Project Settings → Data API
+     Project URL  → SB_URL
+     anon public  → SB_KEY   (safe to publish; it's the browser key)
+
+   Run polarized-setup-v2.sql first, or nothing will save.
+   ══════════════════════════════════════════════════════════════ */
+
+const SB_URL = "https://euxugjfibsurltcazago.supabase.co";
+const SB_KEY = "sb_publishable_-3NLJrhOf30nOq697BqoIA_feKG-UGa";
+
+/* Optional. Blank until AdSense approves you. */
+const AD_CLIENT = "ca-pub-1217971050094766";
+const AD_SLOT   = "";   // paste a Display unit slot ID once approved
+</script>
+
+<style>
+  :root{
+    --ink:#141821; --ink2:#1D2331; --paper:#F4F1EA;
+    --mute:#7C8497; --agree:#F2C230; --disagree:#3B5BDB; --edge:#252C3C;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  html,body{background:var(--ink);color:var(--paper)}
+  body{
+    font-family:Archivo,ui-sans-serif,system-ui,-apple-system,sans-serif;
+    min-height:100dvh;display:flex;flex-direction:column;align-items:center;
+    padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+    -webkit-font-smoothing:antialiased;
+  }
+  #app{width:100%;max-width:440px;padding:24px 20px 40px;display:flex;flex-direction:column;flex:1;min-height:0}
+  #ad{width:100%;max-width:440px;padding:0 20px 32px;display:none}
+  .grow{flex:1}
+  .eyebrow{font:600 11px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.18em;
+           text-transform:uppercase;color:var(--mute);margin-bottom:10px}
+  h1.logo{
+    font-weight:900;font-size:clamp(42px,13.5vw,62px);line-height:1;letter-spacing:-.045em;
+    background:linear-gradient(90deg,var(--agree) 0 50%,var(--disagree) 50% 100%);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+    width:max-content;max-width:100%;
+  }
+  .tag{color:var(--mute);font:600 11px/1 ui-monospace,Menlo,monospace;letter-spacing:.18em;
+       text-transform:uppercase;margin-bottom:14px}
+  .rule{display:flex;height:6px;margin-top:22px}
+  .rule i{display:block;width:50%}
+  .rule i:first-child{background:var(--agree)}
+  .rule i:last-child{background:var(--disagree)}
+
+  input{width:100%;padding:16px;background:var(--ink2);color:var(--paper);
+        border:1px solid transparent;border-radius:2px;font:400 17px Archivo,sans-serif;outline:none}
+  input:focus-visible{border-color:var(--agree)}
+  input::placeholder{color:#4A5364}
+
+  button{font-family:inherit;cursor:pointer;border:none;border-radius:2px;color:inherit;background:none}
+  button:focus-visible{outline:2px solid var(--agree);outline-offset:2px}
+  .btn{width:100%;padding:17px;background:var(--paper);color:var(--ink);
+       font:600 13px Archivo,sans-serif;letter-spacing:.1em;text-transform:uppercase}
+  .btn[disabled]{opacity:.25;cursor:default}
+  .btn.ghost{background:none;color:var(--mute);border:1px solid var(--edge)}
+  .link{color:var(--mute);font-size:14px;text-decoration:underline;padding:8px 0}
+
+  .code{font:700 56px/1 ui-monospace,Menlo,monospace;letter-spacing:.14em;color:var(--agree)}
+  .mono{font:600 11px/1.4 ui-monospace,Menlo,monospace;letter-spacing:.16em;
+        text-transform:uppercase;color:var(--mute)}
+
+  .row{display:flex;justify-content:space-between;align-items:center;padding:13px 0;
+       border-bottom:1px solid var(--ink2)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .cat{padding:16px 12px;background:var(--ink2);border-radius:2px;font-weight:600;font-size:14px;text-align:left}
+
+  .vote{padding:34px 8px;border-radius:2px;background:var(--ink2);color:var(--paper);
+        font:900 21px Archivo,sans-serif;letter-spacing:-.02em;text-transform:uppercase;
+        transform:scale(.97);transition:transform .18s ease,opacity .18s ease,background .18s ease}
+  .vote.on{transform:scale(1)}
+  .vote.dim{opacity:.32}
+  .vote.a.on{background:var(--agree);color:var(--ink)}
+  .vote.d.on{background:var(--disagree);color:var(--paper)}
+
+  .bar{display:flex;height:14px;margin-bottom:6px;background:var(--ink2)}
+  .bar i{display:block;transition:width .7s cubic-bezier(.22,1,.36,1)}
+  .bar .a{background:var(--agree)}
+  .bar .d{background:var(--disagree)}
+
+  .pair{display:flex;align-items:center;gap:8px;padding:5px 0;animation:in .45s both}
+  .pair .side{flex:1;padding:13px;border-radius:2px;font-weight:600;font-size:14px;
+              overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .pair .a{background:var(--agree);color:var(--ink)}
+  .pair .d{background:var(--disagree);color:var(--paper);text-align:right}
+  @keyframes in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+  .chip{display:inline-block;padding:8px 11px;border-radius:2px;font:600 11px Archivo,sans-serif;margin:4px 4px 0 0}
+  .wolf{border:1px solid var(--agree);border-radius:2px;padding:15px;margin-bottom:22px;animation:in .5s .3s both}
+
+  .topic{font:600 25px/1.3 Archivo;letter-spacing:-.02em;padding:20px 0 4px;
+         border-left:3px solid var(--agree);padding-left:16px;margin-bottom:26px}
+  .laps{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:8px}
+  .laps button{padding:14px 0;background:var(--ink2);color:var(--mute);
+               font:600 13px Archivo;border-radius:2px}
+  .laps button.on{background:var(--agree);color:var(--ink)}
+  textarea{width:100%;padding:16px;background:var(--ink2);color:var(--paper);border:1px solid transparent;
+           border-radius:2px;font:600 19px/1.35 Archivo,sans-serif;outline:none;resize:none;min-height:120px}
+  textarea:focus-visible{border-color:var(--agree)}
+  textarea::placeholder{color:#4A5364;font-weight:400}
+  .setup{line-height:1.55;font-size:15px;color:var(--mute)}
+  .setup ol{margin:16px 0 0 18px}
+  .setup li{margin-bottom:9px}
+  .setup code{font-family:ui-monospace,Menlo,monospace;font-size:13px;color:var(--paper);
+              background:var(--ink2);padding:2px 5px}
+  .err{color:var(--agree);font-size:14px;padding-top:14px}
+  .mb8{margin-bottom:8px}.mb16{margin-bottom:16px}.mb24{margin-bottom:24px}.mb32{margin-bottom:32px}
+  .mt24{margin-top:24px}.mt32{margin-top:32px}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="ad"><div class="eyebrow">Advertisement</div>
+  <ins class="adsbygoogle" style="display:block" data-ad-format="auto" data-full-width-responsive="true"></ins>
+</div>
+
+<script>
+/* ─────────────────────────────  data  ───────────────────────────── */
+
+const CATEGORIES = [
+  "Breakfast","Airports","Pets","Small talk","Camping","Weddings","Group chats",
+  "Leftovers","Karaoke","Road trips","Tattoos","Sequels","Hotel rooms","Coffee",
+  "Gyms","Sandwiches","Halloween","Board games","Voicemail","Beaches","Tipping",
+  "Houseplants","Snow","Barbecue","Public transit","Reality TV","Hot sauce",
+  "Mornings","Cats","Dress codes","Casinos","Museums","Cruise ships","Cereal",
+  "Fireworks","Alarm clocks","Buffets","Podcasts","Dogs at work","Airline seats",
+  "Ice cream","Home repair","Mall food courts","Pickup trucks","Thrift stores",
+  "Sports radio","Birthdays","Swimming pools","Cold weather","Texas","Airbnbs",
+  "Amusement parks","Grocery stores","Haircuts","Long flights","Diners","Suburbs",
+  "Costumes","Family photos","Parades","Winter sports","Fast food","Libraries"
+];
+
+/* ────────────────────────────  plumbing  ────────────────────────── */
+
+const CONFIGURED = /^https:\/\/.+\.supabase\.co\/?$/.test(SB_URL || "")
+                   && !SB_URL.includes("YOUR-PROJECT")
+                   && /^(sb_publishable_|eyJ)/.test(SB_KEY || "");
+
+const sb = CONFIGURED ? supabase.createClient(SB_URL, SB_KEY, {
+  auth: { persistSession: false }
+}) : null;
+
+function store(k, v){
+  try {
+    if (v === undefined) return JSON.parse(localStorage.getItem(k));
+    localStorage.setItem(k, JSON.stringify(v));
+  } catch { return null; }
+}
+
+const S = {
+  screen: CONFIGURED ? "home" : "setup",
+  me: null, name: "", code: "", isHost: false,
+  room: null, myVote: null, reroll: 0, note: "", busy: false,
+  modCounts: false, joinCode: "", laps: 2, topicDraft: ""
+};
+
+(function identity(){
+  const saved = store("pol:id");
+  S.me   = (saved && saved.id) || "p" + Math.random().toString(36).slice(2,10);
+  S.name = (saved && saved.name) || "";
+  store("pol:id", {id:S.me, name:S.name});
+})();
+
+const newCode = () => { const L="ABCDEFGHJKLMNPQRSTUVWXYZ";
+  return [...Array(4)].map(()=>L[Math.random()*L.length|0]).join(""); };
+
+function seeded(str){ let h=2166136261; for(let i=0;i<str.length;i++){h^=str.charCodeAt(i);h=Math.imul(h,16777619);}
+  return ()=>{h+=0x6d2b79f5;let t=h;t=Math.imul(t^t>>>15,t|1);t^=t+Math.imul(t^t>>>7,t|61);
+              return((t^t>>>14)>>>0)/4294967296;}; }
+function categories(seed,n=6){ const r=seeded(seed), pool=[...CATEGORIES], out=[];
+  while(out.length<n && pool.length) out.push(pool.splice(r()*pool.length|0,1)[0]);
+  return out; }
+
+const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g,
+  c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+/* ──────────────────  realtime: three tables, one channel  ───────────────── */
+/* Each player writes only their own player row and their own vote row, so
+   two people joining at the same moment can never overwrite each other.
+   Only the moderator writes rooms.round.                                    */
+
+let channel = null, poll = null;
+
+function startPolling(){
+  if (poll) return;
+  poll = setInterval(() => { if (!document.hidden) refresh(); }, 2000);
+}
+function stopPolling(){ if (poll){ clearInterval(poll); poll = null; } }
+
+async function refresh(){
+  if (!S.code) return;
+  const [rooms, players, votes] = await Promise.all([
+    sb.from("pol_rooms").select("round").eq("code", S.code).maybeSingle(),
+    sb.from("pol_players").select("pid,name,joined").eq("code", S.code),
+    sb.from("pol_votes").select("n,pid,choice").eq("code", S.code)
+  ]);
+
+  const P = {};
+  (players.data || []).forEach(p => P[p.pid] = {name:p.name, joined:p.joined});
+  const V = {};
+  (votes.data || []).forEach(v => { (V[v.n] = V[v.n] || {})[v.pid] = v.choice; });
+
+  const prev = S.room && S.room.round;
+  const next = (rooms.data && rooms.data.round) || null;
+  if (prev && next && prev.n !== next.n){ S.myVote = null; S.reroll = 0; }
+
+  S.room = {players:P, round:next, votes:V};
+
+  // a reconnecting player gets their vote back instead of appearing to have not voted
+  if (next && S.myVote == null){
+    const mine = (V[next.n] || {})[S.me];
+    if (mine) S.myVote = mine;
+  }
+
+  if (S.screen !== "game" && next) S.screen = "game";
+  render();
+}
+
+function subscribe(code){
+  unsubscribe();
+  const f = `code=eq.${code}`;
+  channel = sb.channel(`room-${code}`)
+    .on("postgres_changes", {event:"*", schema:"public", table:"pol_rooms",   filter:f}, refresh)
+    .on("postgres_changes", {event:"*", schema:"public", table:"pol_players", filter:f}, refresh)
+    .on("postgres_changes", {event:"*", schema:"public", table:"pol_votes",   filter:f}, refresh)
+    .subscribe(st => console.log("[realtime]", st));
+  startPolling();   // backstop — correctness never depends on the socket
+}
+function unsubscribe(){
+  stopPolling();
+  if (channel){ sb.removeChannel(channel); channel = null; }
+}
+
+/* remember the room so a refresh or a dead battery isn't fatal */
+function saveSeat(){
+  store("pol:id", {id:S.me, name:S.name.trim(), room:S.code, host:S.isHost});
+}
+async function resume(){
+  const saved = store("pol:id");
+  if (!CONFIGURED || !saved || !saved.room) return false;
+  const {data} = await sb.from("pol_rooms").select("code").eq("code", saved.room).maybeSingle();
+  if (!data){ store("pol:id", {id:S.me, name:S.name}); return false; }
+
+  S.code = saved.room;
+  S.isHost = !!saved.host;
+  S.screen = "lobby";
+  // ignoreDuplicates keeps the original joined time, so turn order never reshuffles
+  await sb.from("pol_players").upsert(
+    {code:S.code, pid:S.me, name:(S.name || "Player").slice(0,14), joined:Date.now()},
+    {onConflict:"code,pid", ignoreDuplicates:true}
+  );
+  subscribe(S.code);
+  await refresh();
+  return true;
+}
+
+/* ────────────────────────────  scoring  ─────────────────────────── */
+
+function score(round, votes){
+  votes = votes || {};
+  const order = round.order || [];
+  const live = order.filter(id => votes[id] && (round.modCounts || id !== round.modId));
+  const agree    = live.filter(id => votes[id] === "a");
+  const disagree = live.filter(id => votes[id] === "d");
+  const pairs = Math.min(agree.length, disagree.length);
+  let wolf = null;
+  if (agree.length === 1 && disagree.length >= 2) wolf = agree[0];
+  if (disagree.length === 1 && agree.length >= 2) wolf = disagree[0];
+  if (wolf === round.modId) wolf = null;          // moderator never takes it
+  return {agree, disagree, pairs, wolf};
+}
+
+/* ────────────────────────────  actions  ─────────────────────────── */
+
+async function joinRoom(code, host){
+  if (!S.name.trim()){ S.note = "Enter your name first."; return render(); }
+  S.busy = true; render();
+
+  if (host){
+    const {error} = await sb.from("pol_rooms").insert({code, round:null});
+    if (error){ S.busy = false; S.note = "Couldn't open a room. Try again."; return render(); }
+  } else {
+    const {data} = await sb.from("pol_rooms").select("code").eq("code", code).maybeSingle();
+    if (!data){ S.busy = false; S.note = `No room called ${code}. Check the letters.`; return render(); }
+  }
+
+  S.isHost = host; S.code = code; S.note = "";
+  await sb.from("pol_players").upsert({
+    code, pid:S.me, name:S.name.trim().slice(0,14), joined:Date.now()
+  });
+
+  saveSeat();
+  subscribe(code);
+  S.busy = false; S.screen = "lobby";
+  await refresh();
+}
+
+async function startGame(){
+  const players = (S.room && S.room.players) || {};
+  const order = Object.keys(players).sort((a,b) => players[a].joined - players[b].joined);
+  const names = {}; order.forEach(id => names[id] = players[id].name);
+  await sb.from("pol_rooms").update({
+    round: {n:1, modId:order[0], phase:"topic", order, names, scores:{},
+            modCounts:S.modCounts, laps:S.laps}
+  }).eq("code", S.code);
+}
+
+async function submitTopic(){
+  const text = S.topicDraft.trim();
+  if (!text) return;
+  S.busy = true; render(true);
+  await sb.from("pol_rooms")
+    .update({round: Object.assign({}, S.room.round, {phase:"voting", topic:text})})
+    .eq("code", S.code);
+  S.topicDraft = ""; S.busy = false;
+}
+
+async function vote(choice){
+  S.myVote = choice; render();
+  await sb.from("pol_votes").upsert({code:S.code, n:S.room.round.n, pid:S.me, choice});
+}
+
+async function reveal(){
+  S.busy = true; render();
+  const round = S.room.round;
+  const votes = (S.room.votes && S.room.votes[round.n]) || {};
+  const r = score(round, votes);
+  const scores = Object.assign({}, round.scores);
+  scores[round.modId] = (scores[round.modId] || 0) + r.pairs;
+  if (r.wolf) scores[r.wolf] = (scores[r.wolf] || 0) + 1;
+  await sb.from("pol_rooms")
+    .update({round: Object.assign({}, round, {phase:"reveal", scores, revealed:votes})})
+    .eq("code", S.code);
+  S.busy = false;
+}
+
+async function nextRound(){
+  const round = S.room.round;
+  const i = round.order.indexOf(round.modId);
+  const done = round.n >= round.order.length * (round.laps || 1);
+  S.myVote = null; S.reroll = 0; S.topicDraft = "";
+  const next = Object.assign({}, round, {
+    n: round.n + 1,
+    modId: round.order[(i + 1) % round.order.length],
+    phase: done ? "final" : "topic"
+  });
+  delete next.revealed;
+  delete next.topic;
+  await sb.from("pol_rooms").update({round: next}).eq("code", S.code);
+}
+
+function leave(){
+  unsubscribe();
+  store("pol:id", {id:S.me, name:S.name});
+  Object.assign(S, {screen:"home", code:"", room:null, myVote:null, isHost:false, note:""});
+  render();
+}
+
+/* ──────────────────────────────  ads  ───────────────────────────── */
+
+const AD_VERIFY = /^ca-pub-\d+$/.test(AD_CLIENT);
+const AD_ON     = AD_VERIFY && /^\d+$/.test(AD_SLOT);
+let adReady = false;
+
+function initAds(){
+  if (!AD_VERIFY) return;
+  const ins = document.querySelector("#ad ins");
+  ins.setAttribute("data-ad-client", AD_CLIENT);
+  if (AD_SLOT) ins.setAttribute("data-ad-slot", AD_SLOT);
+  const tag = document.createElement("script");
+  tag.async = true; tag.crossOrigin = "anonymous";
+  tag.src = "https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=" + AD_CLIENT;
+  document.head.appendChild(tag);
+}
+function showAd(on){
+  if (!AD_ON) return;
+  document.getElementById("ad").style.display = on ? "block" : "none";
+  if (on && !adReady){
+    adReady = true;
+    try { (window.adsbygoogle = window.adsbygoogle || []).push({}); } catch (e) {}
+  }
+}
+
+/* ─────────────────────────────  views  ──────────────────────────── */
+
+const app = document.getElementById("app");
+
+let lastSig = "";
+function render(force){
+  // the 2s poll would otherwise wipe the textarea mid-sentence
+  const sig = JSON.stringify([S.screen, S.code, S.myVote, S.reroll,
+                              S.note, S.busy, S.modCounts, S.laps, S.room]);
+  if (!force && sig === lastSig) return;
+  lastSig = sig;
+
+  const active = document.activeElement;
+  const keepId = active && active.id;
+  const keepAt = active && active.selectionStart;
+
+  app.innerHTML = ({setup, home, lobby, game})[S.screen === "game" ? "game" : S.screen]();
+  bind();
+
+  if (keepId){
+    const el = document.getElementById(keepId);
+    if (el){ el.focus(); try { el.setSelectionRange(keepAt, keepAt); } catch (e) {} }
+  }
+  const rd = S.room && S.room.round;
+  showAd(S.screen === "lobby" || !!(rd && rd.phase === "final"));
+}
+
+const setup = () => `
+  <div class="tag mt24">A party game</div>
+  <h1 class="logo">POLARIZED</h1>
+  <div class="rule mb32"><i></i><i></i></div>
+  <div class="eyebrow">One step left</div>
+  <div class="setup">
+    This page needs your Supabase project URL and anon key to pass votes between phones.
+    <ol>
+      <li>Supabase dashboard → your project → <b>Project Settings → Data API</b></li>
+      <li>Copy the <b>Project URL</b> into <code>SB_URL</code></li>
+      <li>Copy the <b>anon public</b> key into <code>SB_KEY</code></li>
+      <li>Run <code>polarized-setup-v2.sql</code> in the SQL editor</li>
+      <li>Reload</li>
+    </ol>
+    <div class="mt24">The anon key is meant to be public — it ships in every browser. Row-level
+    security is what protects the data, not the key.</div>
+  </div>`;
+
+const home = () => `
+  <div class="tag mt24">A party game</div>
+  <h1 class="logo">POLARIZED</h1>
+  <div class="rule mb32"><i></i><i></i></div>
+
+  <div class="eyebrow">Your name</div>
+  <input id="name" class="mb24" value="${esc(S.name)}" placeholder="Ryan" maxlength="14" autocomplete="off">
+
+  <button class="btn mb32" id="host">Start a room</button>
+
+  <div class="eyebrow">Or join with a code</div>
+  <div style="display:flex;gap:8px">
+    <input id="join" value="${esc(S.joinCode)}" placeholder="ABCD" maxlength="4" autocomplete="off"
+           style="text-align:center;font:600 24px ui-monospace,Menlo,monospace;letter-spacing:.2em">
+    <button class="btn" id="dojoin" style="width:auto;padding:0 26px">Join</button>
+  </div>
+  ${S.note ? `<div class="err">${esc(S.note)}</div>` : ""}
+  <div class="grow"></div>
+  <div class="mono mt32" style="line-height:1.8">
+    Say something the room will split on<br>
+    Score a point for every pair you divide<br>
+    Stand alone against everyone and take one for yourself
+  </div>
+  <a href="https://planitnow.us/privacy" class="mono" style="padding-top:20px;text-decoration:underline">Privacy</a>`;
+
+function lobby(){
+  const players = (S.room && S.room.players) || {};
+  const ids = Object.keys(players).sort((a,b) => players[a].joined - players[b].joined);
+  if (S.room && S.room.round){ S.screen = "game"; return game(); }
+  return `
+  <div class="eyebrow">Room code — say it out loud</div>
+  <div class="code mb32">${esc(S.code)}</div>
+
+  <div class="eyebrow">In the room · ${ids.length}</div>
+  <div class="mb24">
+    ${ids.map((id,i) => `<div class="row"><span style="font-size:17px">${esc(players[id].name)}</span>
+      <span class="mono">${i === 0 ? "moderates first" : "#" + (i+1)}</span></div>`).join("")}
+    ${ids.length < 3 ? `<div class="setup mt24">Waiting on players. Three minimum — you need two voters to make a pair.</div>` : ""}
+  </div>
+
+  ${S.isHost ? `
+    <div class="eyebrow" style="margin-top:8px">Turns as moderator, each</div>
+    <div class="laps">
+      ${[1,2,3].map(v => `<button data-laps="${v}" class="${S.laps === v ? "on" : ""}">${v}${v === 1 ? " lap" : " laps"}</button>`).join("")}
+    </div>
+    <div class="setup mb24" style="font-size:13px">${ids.length ? ids.length * S.laps : "—"} rounds total</div>
+
+    <button id="toggle" class="row" style="width:100%;text-align:left;border-top:1px solid var(--ink2)">
+      <span style="color:var(--mute);font-size:14px">Moderator's own vote counts toward pairs</span>
+      <span class="mono" style="padding:6px 9px;background:${S.modCounts ? "var(--agree)" : "var(--ink2)"};color:${S.modCounts ? "var(--ink)" : "var(--mute)"}">${S.modCounts ? "on" : "off"}</span>
+    </button>
+    <button class="btn mt24" id="start" ${ids.length < 3 ? "disabled" : ""}>Start game</button>
+  ` : `<div class="setup">Waiting for the host to start.</div>`}
+
+  <div class="grow"></div>
+  <button class="link mt32" id="leave">Leave room</button>`;
+}
+
+function game(){
+  const round = S.room && S.room.round;
+  if (!round) return `<div class="setup mt32">Syncing…</div>`;
+
+  const iAmMod = round.modId === S.me;
+  const modName = (round.names || {})[round.modId] || "…";
+  const total  = (round.order || []).length;                 // seats at the table
+  const rounds = total * (round.laps || 1);                  // rounds in the game
+  const head = `<div class="row" style="border:none;padding:0 0 28px">
+      <span class="mono">Round ${Math.min(round.n, rounds)} / ${rounds}</span>
+      <span class="mono">${esc(S.code)}</span></div>`;
+
+  const standings = (round.order || [])
+    .map(id => ({id, name:(round.names||{})[id], pts:(round.scores||{})[id] || 0}))
+    .sort((a,b) => b.pts - a.pts);
+
+  if (round.phase === "final"){
+    const top = standings[0] || {name:"—", pts:0};
+    return head + `
+      <div class="eyebrow">Final</div>
+      <div style="font:900 44px/1 Archivo;letter-spacing:-.03em">${esc(top.name)}</div>
+      <div class="mb32" style="color:var(--agree);font-size:17px;padding-top:6px">${top.pts} points</div>
+      ${standings.map((s,i) => `<div class="row"><span><span class="mono" style="margin-right:12px">${i+1}</span>${esc(s.name)}</span>
+        <span style="font-family:ui-monospace,Menlo,monospace">${s.pts}</span></div>`).join("")}
+      <div class="grow"></div>
+      <button class="btn ghost mt32" id="leave">Back to start</button>`;
+  }
+
+  if (round.phase === "topic"){
+    const cats = categories(`${S.code}:${round.n}:${S.reroll}`);
+    if (!iAmMod){
+      return head + `
+        <div class="eyebrow">Moderator</div>
+        <div style="font:900 32px/1 Archivo;letter-spacing:-.03em">${esc(modName)}</div>
+        <div class="setup" style="padding-top:10px">is writing a statement…</div>
+        <div class="grow"></div>
+        <div class="mono">Get ready to pick a side</div>`;
+    }
+    return head + `
+      <div class="eyebrow">You're the moderator</div>
+      <div class="mb24" style="font:600 22px/1.35 Archivo">Write something the room will split on. Score a point for every pair you divide.</div>
+      <textarea id="topic" placeholder="Pineapple belongs on pizza." maxlength="180">${esc(S.topicDraft)}</textarea>
+      <div class="eyebrow" style="margin-top:22px">Stuck? Try one of these</div>
+      <div class="grid2 mb16">${cats.map(c => `<div class="cat">${esc(c)}</div>`).join("")}</div>
+      <button class="mono mb32" id="reroll" style="text-align:left">New categories ↻</button>
+      <div class="grow"></div>
+      <button class="btn" id="send" ${S.topicDraft.trim() ? "" : "disabled"}>Send to the room</button>`;
+  }
+
+  if (round.phase === "voting"){
+    const votes = (S.room.votes && S.room.votes[round.n]) || {};
+    const cast = Object.keys(votes).length;
+    return head + `
+      <div class="eyebrow">${iAmMod ? "Your statement" : esc(modName) + " says"}</div>
+      <div class="topic">${esc(round.topic || "")}</div>
+
+      <div class="eyebrow">Your vote</div>
+      <div class="grid2 mb16">
+        <button class="vote a ${S.myVote === "a" ? "on" : ""} ${S.myVote === "d" ? "dim" : ""}" data-vote="a">Agree</button>
+        <button class="vote d ${S.myVote === "d" ? "on" : ""} ${S.myVote === "a" ? "dim" : ""}" data-vote="d">Disagree</button>
+      </div>
+      ${S.myVote ? `<div class="setup">Locked in. You can change it until the reveal.</div>` : ""}
+
+      <div class="grow"></div>
+      ${iAmMod ? `
+        <div class="mono mb16">${cast} of ${total} voted</div>
+        <button class="btn" id="reveal" ${cast < 2 ? "disabled" : ""}>Reveal votes</button>
+      ` : `<div class="mono">${cast} of ${total} voted</div>`}`;
+  }
+
+  const votes = round.revealed || {};
+  const r = score(round, votes);
+  const n = r.agree.length + r.disagree.length;
+  const aPct = n ? (r.agree.length / n) * 100 : 50;
+  const pairs = Array.from({length:r.pairs}, (_, i) => [r.agree[i], r.disagree[i]]);
+  const spare = [...r.agree.slice(r.pairs).map(id => [id,"a"]),
+                 ...r.disagree.slice(r.pairs).map(id => [id,"d"])];
+
+  return head + `
+    <div class="eyebrow">${esc(modName)} said</div>
+    <div class="topic">${esc(round.topic || "")}</div>
+
+    <div class="eyebrow">The room</div>
+    <div class="bar"><i class="a" style="width:${aPct}%"></i><i class="d" style="width:${100-aPct}%"></i></div>
+    <div class="row mono" style="border:none;padding:0 0 28px"><span>${r.agree.length} agree</span><span>${r.disagree.length} disagree</span></div>
+
+    <div class="eyebrow">Pairs — ${esc(modName)} scores ${r.pairs}</div>
+    <div class="mb24">
+      ${pairs.map(([a,d],i) => `<div class="pair" style="animation-delay:${i*90}ms">
+          <span class="side a">${esc((round.names||{})[a])}</span>
+          <span class="mono">+1</span>
+          <span class="side d">${esc((round.names||{})[d])}</span></div>`).join("")}
+      ${r.pairs === 0 ? `<div class="setup" style="padding:14px 0">The room agreed with itself. No pairs, no points.</div>` : ""}
+      ${spare.length ? `<div style="padding-top:10px">${spare.map(([id,side]) =>
+        `<span class="chip" style="border:1px solid var(--${side === "a" ? "agree" : "disagree"});color:var(--${side === "a" ? "agree" : "disagree"})">${esc((round.names||{})[id])} unpaired</span>`).join("")}</div>` : ""}
+    </div>
+
+    ${r.wolf ? `<div class="wolf">
+        <div class="eyebrow" style="color:var(--agree);margin-bottom:6px">Lone wolf +1</div>
+        <div style="font:600 18px Archivo">${esc((round.names||{})[r.wolf])} was the only one.</div></div>` : ""}
+
+    <div class="eyebrow">Standings</div>
+    <div class="mb32">${standings.map(s => `<div class="row">
+        <span style="color:${s.id === round.modId ? "var(--paper)" : "var(--mute)"}">${esc(s.name)}</span>
+        <span style="font-family:ui-monospace,Menlo,monospace">${s.pts}</span></div>`).join("")}</div>
+
+    <div class="grow"></div>
+    ${iAmMod
+      ? `<button class="btn" id="next">${round.n >= rounds ? "See final scores" : "Next round"}</button>`
+      : `<div class="setup">Waiting for ${esc(modName)} to pass the gavel. Argue in the meantime.</div>`}`;
+}
+
+/* ────────────────────────────  binding  ─────────────────────────── */
+
+function bind(){
+  const on = (id, fn) => { const el = document.getElementById(id); if (el) el.onclick = fn; };
+  const nameEl = document.getElementById("name");
+  if (nameEl) nameEl.oninput = e => { S.name = e.target.value; };
+  const joinEl = document.getElementById("join");
+  if (joinEl) joinEl.oninput = e => {
+    S.joinCode = e.target.value = e.target.value.toUpperCase().replace(/[^A-Z]/g,"");
+  };
+
+  const topicEl = document.getElementById("topic");
+  if (topicEl) topicEl.oninput = e => {
+    S.topicDraft = e.target.value;                    // no re-render: keeps the cursor put
+    const send = document.getElementById("send");
+    if (send) send.disabled = !S.topicDraft.trim();
+  };
+  document.querySelectorAll("[data-laps]").forEach(b =>
+    b.onclick = () => { S.laps = +b.dataset.laps; render(true); });
+
+  on("send",   submitTopic);
+  on("host",   () => joinRoom(newCode(), true));
+  on("dojoin", () => S.joinCode.length === 4 && joinRoom(S.joinCode, false));
+  on("toggle", () => { S.modCounts = !S.modCounts; render(); });
+  on("start",  startGame);
+  on("reroll", () => { S.reroll++; render(); });
+  on("reveal", reveal);
+  on("next",   nextRound);
+  on("leave",  leave);
+
+  document.querySelectorAll("[data-vote]").forEach(b => b.onclick = () => vote(b.dataset.vote));
+}
+
+initAds();
+render();
+resume();   // drops you back into your seat if you reload mid-game
+</script>
+</body>
+</html>
