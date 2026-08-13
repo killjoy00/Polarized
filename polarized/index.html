@@ -12,18 +12,21 @@
 
 <script>
 /* ══════════════════════════════════════════════════════════════
-   CONFIGURE — two lines, both from your existing foodfinder
-   project so this never hits the seven-day inactivity pause.
+   CONFIGURE — two lines, from the dedicated Polarized project.
 
    Supabase dashboard → Project Settings → Data API
-     Project URL  → SB_URL
-     anon public  → SB_KEY   (safe to publish; it's the browser key)
+     Project URL      → SB_URL
+     publishable key  → SB_KEY   (safe to publish; it's the browser key)
 
-   Run polarized-setup-v2.sql first, or nothing will save.
+   Run supabase/setup.sql first, or nothing will save.
+
+   Free projects sleep after ~7 days idle. Keep something pinging
+   this one, or the first person to open the game after a quiet
+   fortnight gets a room that won't create.
    ══════════════════════════════════════════════════════════════ */
 
-const SB_URL = "https://euxugjfibsurltcazago.supabase.co";
-const SB_KEY = "sb_publishable_-3NLJrhOf30nOq697BqoIA_feKG-UGa";
+const SB_URL = "https://hqvqxwlgjjxufbjklfhj.supabase.co";
+const SB_KEY = "sb_publishable_NCRLW3byhByVaQpfobY0Zg_WaReRFRc";
 
 /* Optional. Blank until AdSense approves you. */
 const AD_CLIENT = "ca-pub-1217971050094766";

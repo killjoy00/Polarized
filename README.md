@@ -22,19 +22,30 @@ rendering template literals into a single `#app` div. Supabase from CDN.
 ```
 polarized/     index.html, ads.txt   ← the deployed site root
   privacy/     index.html          ← served at /privacy
+supabase/      setup.sql             ← run once on a fresh project
 README.md
 .gitignore
 ```
 
 ## Backend
 
-Supabase project `euxugjfibsurltcazago`, **shared with an unrelated app called
-foodfinder**. All tables are prefixed `pol_` and this is not cosmetic: an
-earlier version used bare names (`rooms`, `players`, `votes`), collided with
-foodfinder's existing `votes` table, broke the app, and applied permissive RLS
-policies to a table that wasn't ours.
+Supabase project `hqvqxwlgjjxufbjklfhj`, dedicated to Polarized. Schema lives
+in [`supabase/setup.sql`](supabase/setup.sql) — run it once on a fresh project
+and everything the app needs exists.
 
-**Never create an unprefixed table in this project.**
+Tables keep the `pol_` prefix. It's no longer load-bearing now that the project
+is Polarized's alone, but the app hardcodes the names and renaming buys
+nothing. The prefix exists because an earlier version ran in a project shared
+with an unrelated app called foodfinder, used bare names (`rooms`, `players`,
+`votes`), collided with foodfinder's existing `votes` table, broke it, and
+applied permissive RLS policies to a table that wasn't ours. That project
+(`euxugjfibsurltcazago`) still holds the old `pol_` tables and the policy
+residue; neither is this project's problem, but the cleanup is still owed to
+foodfinder's owner.
+
+**This project sleeps after ~7 days idle** — free tier. The shared project
+never did, because foodfinder's traffic kept it warm. Something has to ping
+this one or the game is dead after a quiet fortnight.
 
 | table | columns | primary key |
 | --- | --- | --- |
@@ -45,7 +56,10 @@ policies to a table that wasn't ours.
 All game state for a room lives in `pol_rooms.round` as JSON. Phases run
 `topic` → `voting` → `reveal`, then `final`.
 
-`public.pol_purge_old_rooms()` deletes rooms older than 24 hours.
+`public.pol_purge_old_rooms()` deletes rooms older than 24 hours, scheduled
+hourly with `pg_cron`. It deletes rooms only — the foreign keys cascade, so
+players and votes go with them. Verified against the live project by deleting a
+test room and confirming both child tables emptied.
 
 ## Invariants — do not break these
 
