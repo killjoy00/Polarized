@@ -1,0 +1,11 @@
+# Never commit a service_role key or anything else secret.
+.env
+.env.*
+*secret*
+*.pem
+
+.DS_Store
+node_modules/
+
+# wrangler's local deploy cache
+.wrangler/

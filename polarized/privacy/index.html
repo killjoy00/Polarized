@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Privacy — Polarized</title>
+<meta name="theme-color" content="#141821">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;900&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#141821; --ink2:#1D2331; --paper:#F4F1EA;
+    --mute:#7C8497; --agree:#F2C230; --disagree:#3B5BDB; --edge:#252C3C;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{background:var(--ink);color:var(--paper)}
+  body{
+    font-family:Archivo,ui-sans-serif,system-ui,-apple-system,sans-serif;
+    min-height:100dvh;display:flex;flex-direction:column;align-items:center;
+    padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+    -webkit-font-smoothing:antialiased;
+  }
+  main{width:100%;max-width:560px;padding:24px 20px 56px}
+  h1.logo{
+    font-weight:900;font-size:clamp(36px,11vw,52px);line-height:1;letter-spacing:-.045em;
+    background:linear-gradient(90deg,var(--agree) 0 50%,var(--disagree) 50% 100%);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+    width:max-content;max-width:100%;
+  }
+  .tag{color:var(--mute);font:600 11px/1 ui-monospace,Menlo,monospace;letter-spacing:.18em;
+       text-transform:uppercase;margin-bottom:14px}
+  .rule{display:flex;height:6px;margin:22px 0 36px}
+  .rule i{display:block;width:50%}
+  .rule i:first-child{background:var(--agree)}
+  .rule i:last-child{background:var(--disagree)}
+  h2{font:900 15px Archivo;letter-spacing:.02em;text-transform:uppercase;margin:34px 0 10px}
+  p{color:#C9CEDA;font-size:15.5px;line-height:1.6;margin-bottom:12px}
+  ul{margin:0 0 12px 18px}
+  li{color:#C9CEDA;font-size:15.5px;line-height:1.6;margin-bottom:6px}
+  b{color:var(--paper);font-weight:600}
+  a{color:var(--agree)}
+  code{font:600 14px ui-monospace,Menlo,monospace;color:var(--paper)}
+  .stamp{color:var(--mute);font:600 11px/1.4 ui-monospace,Menlo,monospace;
+         letter-spacing:.16em;text-transform:uppercase;margin-bottom:8px}
+  footer{margin-top:44px;padding-top:20px;border-top:1px solid var(--ink2)}
+  footer a{color:var(--mute);font-size:14px;text-decoration:underline}
+</style>
+</head>
+<body>
+<main>
+  <div class="tag">A party game</div>
+  <h1 class="logo">POLARIZED</h1>
+  <div class="rule"><i></i><i></i></div>
+
+  <div class="stamp">Privacy policy · Last updated 11 August 2026</div>
+  <p>Polarized is a browser party game. There are no accounts, no sign-in, and
+  no email addresses. This page describes everything the game stores.</p>
+
+  <h2>What we collect</h2>
+  <ul>
+    <li><b>The display name you type</b> when you join a room. Call yourself
+    whatever you like — it is shown to everyone else in the room.</li>
+    <li><b>A random player ID</b> generated in your browser to tell players
+    apart within a room. It is not tied to you, your device, or any other
+    room.</li>
+    <li><b>Your votes</b> — agree or disagree — and the statements the
+    moderator types.</li>
+    <li><b>The room code</b> and the scores for that game.</li>
+  </ul>
+  <p>We do not ask for your email address, we do not collect payment details,
+  and we run no analytics or tracking software of our own.</p>
+
+  <h2>What stays on your device</h2>
+  <p>The game keeps your player ID, your display name, and the code of the room
+  you are in, in your browser's local storage. That is what puts you back in
+  your seat if you reload the page or your phone dies mid-game. Clearing your
+  browser data removes it.</p>
+
+  <h2>Who can see your votes</h2>
+  <p>Votes are hidden until the moderator reveals the round. After the reveal,
+  everyone in the room sees who voted which way — that is the game. Treat a
+  vote as visible to the room, not as anonymous.</p>
+  <p>Anyone holding a room's four-letter code can join that room. Codes are
+  short by design, so do not put anything in a statement you would mind a
+  stranger reading.</p>
+
+  <h2>Retention and deletion</h2>
+  <p>Rooms are temporary. A room and everything attached to it — players,
+  votes, statements, and scores — is deleted automatically within 24 hours of
+  the room being created. There is nothing to log into and nothing kept
+  afterwards.</p>
+  <p>To have a room removed sooner, email
+  <a href="mailto:privacy@planitnow.us">privacy@planitnow.us</a> with the room
+  code.</p>
+
+  <h2>Service providers</h2>
+  <p>Each of these processes data only to provide its part of the game:</p>
+  <ul>
+    <li><b>Supabase</b> — database hosting</li>
+    <li><b>Cloudflare Pages</b> — website hosting</li>
+    <li><b>Google AdSense</b> — advertising</li>
+  </ul>
+  <p>The page also loads fonts from Google Fonts and the Supabase client
+  library from jsDelivr. Like any request to any website, those receive your IP
+  address and browser details.</p>
+
+  <h2>Advertising and cookies</h2>
+  <p>Polarized sets no cookies of its own. It uses local storage, described
+  above, and nothing else.</p>
+  <p>Ads come from Google AdSense and appear only on the lobby screen and the
+  final-score screen — never during a round, and never on a voting or reveal
+  screen. Where ads are shown, third-party vendors including Google use cookies
+  to serve ads based on your prior visits to this and other websites.</p>
+  <p>You can opt out of personalised advertising in
+  <a href="https://www.google.com/settings/ads">Google Ads Settings</a>, or opt
+  out of third-party vendors' use of cookies for personalised advertising at
+  <a href="https://www.aboutads.info/choices/">aboutads.info</a>.</p>
+
+  <h2>Children</h2>
+  <p>Polarized is not directed at children under 13 and we do not knowingly
+  collect their information. Since we collect no contact details, there is no
+  account to close; if you believe a child's information is in a room, contact
+  us and we will delete the room.</p>
+
+  <h2>Changes</h2>
+  <p>If this policy changes materially, the date at the top of this page will
+  be updated.</p>
+
+  <h2>Contact</h2>
+  <p>Polarized is operated as an independent project and is reachable at
+  <a href="mailto:privacy@planitnow.us">privacy@planitnow.us</a>.</p>
+
+  <footer><a href="/">← Back to the game</a></footer>
+</main>
+</body>
+</html>
