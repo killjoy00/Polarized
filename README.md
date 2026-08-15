@@ -114,6 +114,52 @@ phase, not a structural change.
 
 The reveal screen is the product. Everything else is plumbing.
 
+## Open work
+
+Status as of the move to a dedicated Supabase project.
+
+**Done and verified**
+- Repo, README, privacy policy, `.gitignore`
+- Dedicated Supabase project, schema in `supabase/setup.sql`
+- Purge scheduled hourly with `pg_cron` — confirmed by observing test rooms
+  disappear, not just by the job row existing
+- Realtime confirmed working under the app's exact subscription pattern
+- Deployed and playtested with three players
+
+**Open**
+- **Git-connected Cloudflare Pages.** Still direct-upload, so deploying needs a
+  desktop or an API token. Root directory `polarized/`, no build command. Move
+  the `polarized.planitnow.us` domain across, then delete the old project.
+- **RLS.** Policies are `using(true)` on all three tables. Two holes, and they
+  are not equally serious:
+  - *Votes are readable before the reveal.* This is a cheating hole, not a
+    privacy one — devtools shows you the room's votes in time to pick the lone
+    dissenter. Fixable without auth: column-level `revoke select (choice)`,
+    move reveal into a `security definer` function that scores server-side, and
+    keep your own vote in localStorage. The reveal screen already renders from
+    `round.revealed`, and the voting screen only needs a count, so the UI
+    barely changes.
+  - *Anyone can write any room's state.* Vandalism only, and it needs a room
+    code. The only real fix is anonymous auth so a policy can compare
+    `auth.uid()` to `round->>'modId'`, which drags in identity changes, realtime
+    JWTs and an `auth.users` row per browser. Deferred until the link is public.
+- **Keep-alive.** `.github/workflows/keepalive.yml` pings daily. GitHub disables
+  scheduled workflows in repos idle 60 days; a Cloudflare Worker cron has no
+  such rule if that ever bites.
+- **The old shared project** (`euxugjfibsurltcazago`) still runs, still holds
+  the old `pol_` tables and stale rooms, and still carries `play_%` policy
+  residue on foodfinder's tables from the original collision. Cleaning it means
+  editing a database that runs someone else's app — inspect first, and do it
+  with that owner present.
+
+**Worth knowing**
+
+The first realtime subscription to a fresh project delivered nothing; five
+subsequent runs of the identical pattern all worked. Best explanation is a
+cold-start race while the realtime tenant provisions — unproven. The same
+condition may recur on the first connection after the project has been idle,
+which is precisely what the 2-second poll covers.
+
 ## Local development
 
 No server needed for the markup, but the Supabase client needs a real origin:
