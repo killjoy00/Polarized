@@ -64,6 +64,11 @@ hourly with `pg_cron`. It deletes rooms only — the foreign keys cascade, so
 players and votes go with them. Verified against the live project by deleting a
 test room and confirming both child tables emptied.
 
+Clients can read `(code, n, pid)` from `pol_votes` but **not `choice`** — that
+is a column-level grant, since row level security cannot hide a column. So a
+browser can see who has voted and never what they picked. Choices come back
+only in `round.revealed`, written by `pol_reveal()` when the moderator reveals.
+
 ## Invariants — do not break these
 
 1. **Each player writes only their own `pol_players` and `pol_votes` row. Only
@@ -79,6 +84,16 @@ test room and confirming both child tables emptied.
    nothing changed, and saves/restores focus and cursor position when it does
    repaint.** Without this the poll wipes the moderator's textarea
    mid-sentence. Any change to the render path must preserve both behaviors.
+
+4. **Votes are written with insert-then-update, never upsert.** Browsers have
+   no table-wide `SELECT` on `pol_votes`, and Postgres demands one for
+   `INSERT ... ON CONFLICT DO UPDATE` — an upsert fails with `42501` even
+   though every column it touches is granted. Collapsing this back into an
+   `.upsert()` breaks voting outright.
+
+5. **Scoring lives in `pol_reveal()`, not the browser.** `score()` in
+   `index.html` still draws the reveal screen from `round.revealed`, so the two
+   must agree. `tests/score-parity.mjs` checks that.
 
 ## Config
 
@@ -133,22 +148,16 @@ Status as of the move to a dedicated Supabase project.
   disappear, not just by the job row existing
 - Realtime confirmed working under the app's exact subscription pattern
 - Deployed and playtested with three players
+- Pre-reveal vote leak closed: scoring moved into `pol_reveal()`, `choice`
+  revoked from browsers, own vote kept in local storage
 - Git deploys: a Cloudflare Worker builds `polarized/` from `main` on push
 
 **Open**
-- **RLS.** Policies are `using(true)` on all three tables. Two holes, and they
-  are not equally serious:
-  - *Votes are readable before the reveal.* This is a cheating hole, not a
-    privacy one — devtools shows you the room's votes in time to pick the lone
-    dissenter. Fixable without auth: column-level `revoke select (choice)`,
-    move reveal into a `security definer` function that scores server-side, and
-    keep your own vote in localStorage. The reveal screen already renders from
-    `round.revealed`, and the voting screen only needs a count, so the UI
-    barely changes.
-  - *Anyone can write any room's state.* Vandalism only, and it needs a room
-    code. The only real fix is anonymous auth so a policy can compare
-    `auth.uid()` to `round->>'modId'`, which drags in identity changes, realtime
-    JWTs and an `auth.users` row per browser. Deferred until the link is public.
+- **Anyone with a room code can still write that room's state**, and can call
+  `pol_reveal` early. Vandalism rather than cheating, and it needs a code you
+  were told. The only real fix is anonymous auth, so a policy can compare
+  `auth.uid()` to `round->>'modId'` — which drags in identity changes, realtime
+  JWTs and an `auth.users` row per browser. Deferred until the link is public.
 - **Keep-alive.** `.github/workflows/keepalive.yml` pings daily. GitHub disables
   scheduled workflows in repos idle 60 days; a Cloudflare Worker cron has no
   such rule if that ever bites.
