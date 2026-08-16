@@ -41,12 +41,13 @@ and everything the app needs exists.
 Tables keep the `pol_` prefix. It's no longer load-bearing now that the project
 is Polarized's alone, but the app hardcodes the names and renaming buys
 nothing. The prefix exists because an earlier version ran in a project shared
-with an unrelated app called foodfinder, used bare names (`rooms`, `players`,
-`votes`), collided with foodfinder's existing `votes` table, broke it, and
-applied permissive RLS policies to a table that wasn't ours. That project
-(`euxugjfibsurltcazago`) still holds the old `pol_` tables and the policy
-residue; neither is this project's problem, but the cleanup is still owed to
-foodfinder's owner.
+with another app called foodfinder, used bare names (`rooms`, `players`,
+`votes`), collided with foodfinder's existing `votes` table, and applied
+permissive RLS policies to a table that wasn't ours. That project
+(`euxugjfibsurltcazago`) has since been cleaned up — see the bottom of this
+file. The collision damaged no data: foodfinder's `votes` was never altered,
+only wrapped in policies that left it readable and writable by anyone holding
+that project's anon key.
 
 **This project sleeps after ~7 days idle** — free tier. The shared project
 never did, because foodfinder's traffic kept it warm. Something has to ping
@@ -206,45 +207,46 @@ Status as of the move to a dedicated Supabase project.
   The rollback is still at the bottom of rls-3 if the policies ever need
   lifting in a hurry.
 
+- **Anonymous users.** [`rls-4-purge-anon-users.sql`](supabase/rls-4-purge-anon-users.sql)
+  is applied. `pol_purge_anon_users()` runs daily at 03:43 UTC under `pg_cron`,
+  deleting anonymous users idle for seven days. Deleting one costs the player
+  nothing — their next visit finds a dead refresh token and signs in again —
+  but it must never delete somebody mid-game, which is why staleness looks at
+  their sessions and not only at when they last signed in.
+
+  The smoke test (`pol_purge_anon_users('100 years')`) returned 0, which is what
+  proves the permissions and the auth-schema references without deleting
+  anybody, and the job is registered and active. It has not fired yet: watch
+  `cron.job_run_details` rather than the job row, the same way the room purge
+  was confirmed.
+
+**The old shared project** (`euxugjfibsurltcazago`)
+
+[`cleanup-old-project.sql`](supabase/cleanup-old-project.sql) has been run.
+Five tables of the old game's are gone, in two generations — bare-named `rooms`
+and `players` from before the prefix existed, then `pol_rooms`, `pol_players`
+and `pol_votes` — and the three `play_%` policies are off foodfinder's `votes`.
+
+**The residue was a hole, not clutter.** Every one of foodfinder's twelve other
+tables has RLS on and no policies, which returns nothing to `anon`, so
+foodfinder reaches its data as `service_role` or over a direct connection.
+`votes` was the one table `anon` could read, insert into and update, and only
+because of our leftovers. It now answers `anon` the way its siblings do.
+
+The file names exact objects because the inspection found two things the
+earlier, inferring version had wrong. It would have disabled RLS on `votes` —
+seeing no other policies and concluding the RLS was ours — which would have
+made that hole permanent. The rule was sound in the abstract and wrong about
+this database.
+
+Still owed: opening foodfinder and running a vote session end to end. RLS never
+applied to it, so nothing should have changed — but that is a prediction, and
+this project has lost time to predictions twice.
+
 **Open**
 - **Keep-alive.** `.github/workflows/keepalive.yml` pings daily. GitHub disables
   scheduled workflows in repos idle 60 days; a Cloudflare Worker cron has no
   such rule if that ever bites.
-- **The old shared project** (`euxugjfibsurltcazago`) is still up, and
-  [`inspect-old-project.sql`](supabase/inspect-old-project.sql) has now been run
-  against it. What it found changed the plan, so
-  [`cleanup-old-project.sql`](supabase/cleanup-old-project.sql) names exact
-  objects rather than inferring them:
-
-  Five tables there are the old game's, in two generations — bare-named `rooms`
-  and `players` from before the prefix existed, then `pol_rooms`, `pol_players`
-  and `pol_votes`. foodfinder's `votes` was never ours and was never altered;
-  the old script pointed at the name, failed, and left three permissive
-  policies on somebody else's table.
-
-  **The residue is a hole, not clutter.** Every one of foodfinder's twelve
-  other tables has RLS on and no policies, which returns nothing to `anon` —
-  so foodfinder reaches its data as `service_role` or over a direct
-  connection. `votes` is the one table `anon` can read, insert into and update,
-  and only because of our `play_%` policies. Dropping them closes it and leaves
-  `votes` exactly like its siblings.
-
-  This is also why the file no longer disables RLS anywhere. The old
-  inference rule — a table standing on nothing but our policy never had RLS
-  before us — would have turned RLS off on `votes` and made that hole
-  permanent. The rule was sound in the abstract and wrong about this database;
-  the inspection is what caught it.
-- **Anonymous users.** [`rls-4-purge-anon-users.sql`](supabase/rls-4-purge-anon-users.sql)
-  is written and needs running once: it adds `pol_purge_anon_users()`, daily
-  under `pg_cron`, deleting anonymous users idle for seven days. Deleting one
-  costs the player nothing — their next visit finds a dead refresh token and
-  signs in again — but it must never delete somebody mid-game, which is why
-  staleness looks at their sessions and not only at when they last signed in.
-  The window is far longer than the 24 hours a room lives, on purpose.
-
-  Read the preview query at the top of the file before creating anything. It
-  reads Supabase's auth schema rather than ours, and that schema is not ours to
-  depend on.
 
 **Worth knowing**
 
