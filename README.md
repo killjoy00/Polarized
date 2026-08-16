@@ -1,10 +1,11 @@
 # Polarized
 
 A browser party game. Players join a room from their own phones — over Zoom or
-in person. One player moderates: they type a statement, everyone votes agree or
-disagree, and the moderator scores one point per agree/disagree pair they
-created. Splitting the room evenly is the goal. A sole dissenter takes a bonus
-point. Default is 2 turns as moderator each.
+in person. One player moderates: they lock in a category, write a statement,
+everyone votes agree or disagree, and the moderator scores one point per
+agree/disagree pair they created. Splitting the room evenly is the goal. In a
+room of five or more, a sole dissenter takes a bonus point. Default is 2 turns
+as moderator each.
 
 Live at <https://polarized.planitnow.us>.
 
@@ -25,6 +26,7 @@ polarized/     index.html, ads.txt   ← the deployed site root
   privacy/     index.html          ← served at /privacy
 supabase/      setup.sql             ← run once on a fresh project
                rls-*.sql             ← hardening, run in order
+               *-old-project.sql     ← the debt owed to foodfinder
 tests/         *.mjs                 ← scoring parity, run with node
 README.md
 .gitignore
@@ -57,7 +59,18 @@ this one or the game is dead after a quiet fortnight.
 | `pol_votes` | `code`, `n`, `pid`, `choice` | `(code, n, pid)` |
 
 All game state for a room lives in `pol_rooms.round` as JSON. Phases run
-`topic` → `voting` → `reveal`, then `final`.
+`topic` → `voting` → `reveal`, then `final`. The `topic` phase has two halves:
+the moderator locks a category (`round.category`) and then writes the
+statement. `round.cats` holds the six categories the room is choosing from and
+`round.used` the ones already spent — both are room state, so everyone sees the
+same board.
+
+Identity is an anonymous Supabase user. The browser calls `signInAnonymously()`
+on load and uses `auth.uid()` as its player id, which is what gives the write
+policies something to compare against. If anonymous sign-ins are switched off
+the app falls back to a random local id and runs on the permissive policies —
+so the client is safe to deploy before the project is switched over, and
+`supabase/rls-3-anon-auth.sql` is not.
 
 `public.pol_purge_old_rooms()` deletes rooms older than 24 hours, scheduled
 hourly with `pg_cron`. It deletes rooms only — the foreign keys cascade, so
@@ -93,7 +106,10 @@ only in `round.revealed`, written by `pol_reveal()` when the moderator reveals.
 
 5. **Scoring lives in `pol_reveal()`, not the browser.** `score()` in
    `index.html` still draws the reveal screen from `round.revealed`, so the two
-   must agree. `tests/score-parity.mjs` checks that.
+   must agree. `tests/score-parity.mjs` checks that. Changing a scoring rule
+   means editing both and re-running `supabase/rls-1-reveal-function.sql`
+   against the project — it is `create or replace`, so re-running is the
+   migration.
 
 ## Config
 
@@ -112,7 +128,12 @@ Per round, counting only players who voted (the moderator's own vote is
 excluded unless `modCounts` is on):
 
 - moderator scores `min(agree, disagree)` — one point per pair
-- a lone dissenter (1 vs 2+) scores +1; the moderator never takes this
+- a lone dissenter (1 vs 2+) scores +1; the moderator never takes this, and it
+  only exists at five seats or more. Seats at the table, not votes cast: in a
+  three- or four-player room standing alone is a coin flip rather than a stand,
+  and the bonus starts outweighing the pairs it costs the moderator. The
+  threshold is `WOLF_MIN_SEATS` in `index.html` and a literal `5` in
+  `pol_reveal()`.
 
 Scoring runs in the database, in `pol_reveal()`. `score()` in `index.html` is
 kept in step because the reveal screen redraws pairs from `round.revealed`.
@@ -132,10 +153,16 @@ explicitly rejected:
   by default
 
 Open question from playtesting: typing statements may slow the rhythm versus
-speaking them. If that shows up, the intended fix is a countdown on the writing
-phase, not a structural change.
+speaking them. The writing phase now offers dictation — a "Speak it instead"
+button on the moderator's textarea, backed by the Web Speech API. It is
+feature-detected: Chrome, Edge and Safari (iOS included) have it, Firefox does
+not, and there the button is simply not drawn. If the rhythm is still slow, the
+intended fix is a countdown on the writing phase, not a structural change.
 
-The reveal screen is the product. Everything else is plumbing.
+The reveal screen is the product. Everything else is plumbing. Leftover players
+are drawn there as empty boxes on their own side, the same size as the filled
+ones a pair gets — they are the people nobody was found to cancel out, and the
+screen says that by drawing it rather than labelling it.
 
 ## Open work
 
@@ -151,21 +178,54 @@ Status as of the move to a dedicated Supabase project.
 - Pre-reveal vote leak closed: scoring moved into `pol_reveal()`, `choice`
   revoked from browsers, own vote kept in local storage
 - Git deploys: a Cloudflare Worker builds `polarized/` from `main` on push
+- Category lock-in, shared categories, standings while you wait, dictation, the
+  leftover boxes on the reveal — played through end to end in five browsers
+  against the live project
+
+**Written, waiting on the project owner**
+
+Two things below need a hand on the Supabase dashboard. Neither is in the repo's
+gift, and both are in order.
+
+- **Re-run [`supabase/rls-1-reveal-function.sql`](supabase/rls-1-reveal-function.sql).**
+  `pol_reveal()` in the live project still pays the lone wolf in a four-player
+  room, and still lets any caller reveal. Until it is re-run, both test suites
+  fail on purpose and say which file to run. Verified against a local
+  PostgreSQL 16 with the schema loaded: 400 generated rounds, no disagreement
+  with `score()`.
+- **Identity.** [`supabase/rls-3-anon-auth.sql`](supabase/rls-3-anon-auth.sql)
+  closes the write hole: room state becomes writable only by the moderator
+  named in `round->>'modId'`, a player row only by its owner, a vote only by
+  the player casting it. The order is: this build goes live (it signs in
+  anonymously and falls back cleanly), then Authentication → Sign In /
+  Providers → **Anonymous sign-ins: on**, then run the file. Confirmed disabled
+  on the project as of this writing — `/auth/v1/signup` answers
+  `anonymous_provider_disabled`. Every policy was exercised locally: the
+  moderator's whole write path passes, a non-moderator gets zero rows, and the
+  insert-then-update vote path still works while an upsert still fails, so
+  invariant 4 survives. Rollback is at the bottom of the file.
 
 **Open**
-- **Anyone with a room code can still write that room's state**, and can call
-  `pol_reveal` early. Vandalism rather than cheating, and it needs a code you
-  were told. The only real fix is anonymous auth, so a policy can compare
-  `auth.uid()` to `round->>'modId'` — which drags in identity changes, realtime
-  JWTs and an `auth.users` row per browser. Deferred until the link is public.
 - **Keep-alive.** `.github/workflows/keepalive.yml` pings daily. GitHub disables
   scheduled workflows in repos idle 60 days; a Cloudflare Worker cron has no
   such rule if that ever bites.
 - **The old shared project** (`euxugjfibsurltcazago`) still runs, still holds
   the old `pol_` tables and stale rooms, and still carries `play_%` policy
   residue on foodfinder's tables from the original collision. Cleaning it means
-  editing a database that runs someone else's app — inspect first, and do it
-  with that owner present.
+  editing a database that runs someone else's app, so it is now two files.
+  [`inspect-old-project.sql`](supabase/inspect-old-project.sql) is read-only and
+  answers the one question that matters: which of foodfinder's tables have RLS
+  standing on nothing but a policy we added. [`cleanup-old-project.sql`](supabase/cleanup-old-project.sql)
+  drops our objects, then rehearses the repair — printing every table and policy
+  it would touch and changing nothing until `v_apply` is set to true. The order
+  it uses is the whole point: **disable RLS first, then drop the policy.**
+  Backwards leaves a table with RLS on and no policy that applies, which returns
+  zero rows to everyone and raises no error. Both scripts were run against a
+  simulated copy of the collision locally — three tables, one of them with a
+  policy of its own — and foodfinder's reads survived. Still do it with the
+  owner present.
+- **Anonymous users accumulate.** One `auth.users` row per browser, and nothing
+  prunes them.
 
 **Worth knowing**
 
@@ -185,3 +245,10 @@ python3 -m http.server 8000 --directory polarized
 
 Then open <http://localhost:8000>. It talks to the live Supabase project, so
 use a throwaway room code.
+
+The SQL does not need Supabase to be checked. A local PostgreSQL 16 with two
+stand-ins — roles `anon` and `authenticated`, and an `auth.uid()` reading
+`request.jwt.claim.sub` — takes `setup.sql` and all three `rls-*.sql` files as
+they are, which is how the scoring change and every policy in `rls-3` were
+verified before anyone touched the live project. `set role authenticated; set
+request.jwt.claim.sub = '<uuid>';` is enough to play a policy through.
