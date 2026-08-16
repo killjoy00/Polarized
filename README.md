@@ -182,28 +182,25 @@ Status as of the move to a dedicated Supabase project.
   leftover boxes on the reveal — played through end to end in five browsers
   against the live project
 
-**Written, waiting on the project owner**
+**Applied to the live project**
 
-Two things below need a hand on the Supabase dashboard. Neither is in the repo's
-gift, and both are in order.
+- **Scoring.** [`rls-1-reveal-function.sql`](supabase/rls-1-reveal-function.sql)
+  re-run: the lone wolf needs five seats, and only the moderator can reveal.
+- **Identity.** Anonymous sign-ins are on, and
+  [`rls-3-anon-auth.sql`](supabase/rls-3-anon-auth.sql) is applied. Room state
+  is writable only by the moderator named in `round->>'modId'`, a player row
+  only by its owner, a vote only by the player casting it. A client with no
+  session gets `42501` on every write.
 
-- **Re-run [`supabase/rls-1-reveal-function.sql`](supabase/rls-1-reveal-function.sql).**
-  `pol_reveal()` in the live project still pays the lone wolf in a four-player
-  room, and still lets any caller reveal. Until it is re-run, both test suites
-  fail on purpose and say which file to run. Verified against a local
-  PostgreSQL 16 with the schema loaded: 400 generated rounds, no disagreement
-  with `score()`.
-- **Identity.** [`supabase/rls-3-anon-auth.sql`](supabase/rls-3-anon-auth.sql)
-  closes the write hole: room state becomes writable only by the moderator
-  named in `round->>'modId'`, a player row only by its owner, a vote only by
-  the player casting it. The order is: this build goes live (it signs in
-  anonymously and falls back cleanly), then Authentication → Sign In /
-  Providers → **Anonymous sign-ins: on**, then run the file. Confirmed disabled
-  on the project as of this writing — `/auth/v1/signup` answers
-  `anonymous_provider_disabled`. Every policy was exercised locally: the
-  moderator's whole write path passes, a non-moderator gets zero rows, and the
-  insert-then-update vote path still works while an upsert still fails, so
-  invariant 4 survives. Rollback is at the bottom of the file.
+  Confirmed against the live project, not just locally: both suites green
+  (120 generated rounds with no disagreement with `score()`, 52 of them under
+  five seats; all nine edge cases including a non-moderator being refused a
+  reveal), and a five-player game played through five signed-in browsers —
+  which is the part the suites cannot reach, since they seed votes through the
+  `ZZ` test-room exemption rather than as the player casting them.
+
+  The rollback is still at the bottom of rls-3 if the policies ever need
+  lifting in a hurry.
 
 **Open**
 - **Keep-alive.** `.github/workflows/keepalive.yml` pings daily. GitHub disables
