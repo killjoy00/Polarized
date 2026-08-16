@@ -1,0 +1,14 @@
+// Cloudflare Workers config. Without this in the repo, Workers Builds has
+// nothing to deploy: the build settings live only in the dashboard, and
+// `wrangler deploy` reads from here.
+//
+// Assets-only Worker — there is no script, just the static files in
+// polarized/. Default html_handling already resolves /privacy to
+// polarized/privacy/index.html, which is how the site behaved before.
+{
+  "name": "polarized-git",
+  "compatibility_date": "2026-08-16",
+  "assets": {
+    "directory": "./polarized"
+  }
+}
