@@ -210,22 +210,30 @@ Status as of the move to a dedicated Supabase project.
 - **Keep-alive.** `.github/workflows/keepalive.yml` pings daily. GitHub disables
   scheduled workflows in repos idle 60 days; a Cloudflare Worker cron has no
   such rule if that ever bites.
-- **The old shared project** (`euxugjfibsurltcazago`) is still up — its REST
-  endpoint answers, so it is neither paused nor deleted — still holds
-  the old `pol_` tables and stale rooms, and still carries `play_%` policy
-  residue on foodfinder's tables from the original collision. Cleaning it means
-  editing a database that runs someone else's app, so it is now two files.
-  [`inspect-old-project.sql`](supabase/inspect-old-project.sql) is read-only and
-  answers the one question that matters: which of foodfinder's tables have RLS
-  standing on nothing but a policy we added. [`cleanup-old-project.sql`](supabase/cleanup-old-project.sql)
-  drops our objects, then rehearses the repair — printing every table and policy
-  it would touch and changing nothing until `v_apply` is set to true. The order
-  it uses is the whole point: **disable RLS first, then drop the policy.**
-  Backwards leaves a table with RLS on and no policy that applies, which returns
-  zero rows to everyone and raises no error. Both scripts were run against a
-  simulated copy of the collision locally — three tables, one of them with a
-  policy of its own — and foodfinder's reads survived. Still do it with the
-  owner present.
+- **The old shared project** (`euxugjfibsurltcazago`) is still up, and
+  [`inspect-old-project.sql`](supabase/inspect-old-project.sql) has now been run
+  against it. What it found changed the plan, so
+  [`cleanup-old-project.sql`](supabase/cleanup-old-project.sql) names exact
+  objects rather than inferring them:
+
+  Five tables there are the old game's, in two generations — bare-named `rooms`
+  and `players` from before the prefix existed, then `pol_rooms`, `pol_players`
+  and `pol_votes`. foodfinder's `votes` was never ours and was never altered;
+  the old script pointed at the name, failed, and left three permissive
+  policies on somebody else's table.
+
+  **The residue is a hole, not clutter.** Every one of foodfinder's twelve
+  other tables has RLS on and no policies, which returns nothing to `anon` —
+  so foodfinder reaches its data as `service_role` or over a direct
+  connection. `votes` is the one table `anon` can read, insert into and update,
+  and only because of our `play_%` policies. Dropping them closes it and leaves
+  `votes` exactly like its siblings.
+
+  This is also why the file no longer disables RLS anywhere. The old
+  inference rule — a table standing on nothing but our policy never had RLS
+  before us — would have turned RLS off on `votes` and made that hole
+  permanent. The rule was sound in the abstract and wrong about this database;
+  the inspection is what caught it.
 - **Anonymous users.** [`rls-4-purge-anon-users.sql`](supabase/rls-4-purge-anon-users.sql)
   is written and needs running once: it adds `pol_purge_anon_users()`, daily
   under `pg_cron`, deleting anonymous users idle for seven days. Deleting one
