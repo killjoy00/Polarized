@@ -17,7 +17,8 @@ separate phones make hidden voting free.
 
 One static `index.html`. No build step, no framework, no bundler. Vanilla JS
 rendering template literals into a single `#app` div. Supabase from CDN.
-~650 lines including CSS. Deployed on Cloudflare Pages.
+~650 lines including CSS. Served by a git-connected Cloudflare Worker: a push
+to `main` deploys `polarized/` as static assets, no build step involved.
 
 ```
 polarized/     index.html, ads.txt   ← the deployed site root
@@ -125,11 +126,9 @@ Status as of the move to a dedicated Supabase project.
   disappear, not just by the job row existing
 - Realtime confirmed working under the app's exact subscription pattern
 - Deployed and playtested with three players
+- Git deploys: a Cloudflare Worker builds `polarized/` from `main` on push
 
 **Open**
-- **Git-connected Cloudflare Pages.** Still direct-upload, so deploying needs a
-  desktop or an API token. Root directory `polarized/`, no build command. Move
-  the `polarized.planitnow.us` domain across, then delete the old project.
 - **RLS.** Policies are `using(true)` on all three tables. Two holes, and they
   are not equally serious:
   - *Votes are readable before the reveal.* This is a cheating hole, not a
