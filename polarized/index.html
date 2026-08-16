@@ -87,7 +87,10 @@ const AD_SLOT   = "";   // paste a Display unit slot ID once approved
   .row{display:flex;justify-content:space-between;align-items:center;padding:13px 0;
        border-bottom:1px solid var(--ink2)}
   .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-  .cat{padding:16px 12px;background:var(--ink2);border-radius:2px;font-weight:600;font-size:14px;text-align:left}
+  .cat{width:100%;padding:16px 12px;background:var(--ink2);color:var(--paper);border:1px solid transparent;
+       border-radius:2px;font:600 14px Archivo,sans-serif;text-align:left}
+  .cat.on{border-color:var(--agree);color:var(--agree)}
+  .cat.locked{background:none;border-color:var(--agree);color:var(--agree);cursor:default}
 
   .vote{padding:34px 8px;border-radius:2px;background:var(--ink2);color:var(--paper);
         font:900 21px Archivo,sans-serif;letter-spacing:-.02em;text-transform:uppercase;
@@ -102,15 +105,23 @@ const AD_SLOT   = "";   // paste a Display unit slot ID once approved
   .bar .a{background:var(--agree)}
   .bar .d{background:var(--disagree)}
 
+  /* Leftovers use the same box as a paired player — border on every .side so
+     an outlined one is exactly as tall as a filled one. */
   .pair{display:flex;align-items:center;gap:8px;padding:5px 0;animation:in .45s both}
-  .pair .side{flex:1;padding:13px;border-radius:2px;font-weight:600;font-size:14px;
+  .pair .side{flex:1;padding:13px;border:1px solid transparent;border-radius:2px;font-weight:600;font-size:14px;
               overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .pair .a{background:var(--agree);color:var(--ink)}
-  .pair .d{background:var(--disagree);color:var(--paper);text-align:right}
+  .pair .a{background:var(--agree);color:var(--ink);border-color:var(--agree)}
+  .pair .d{background:var(--disagree);color:var(--paper);border-color:var(--disagree);text-align:right}
+  .pair .open{background:none}
+  .pair .open.a{color:var(--agree)}
+  .pair .open.d{color:var(--disagree)}
+  /* the +1 column and the empty half of a leftover row stay as a hidden .mono
+     and a bare .side: flex-basis:0 with border-box still reserves the padding,
+     so anything narrower there makes the outlined box wider than a filled one */
+  .pair .ghost{visibility:hidden}
   @keyframes in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
   @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 
-  .chip{display:inline-block;padding:8px 11px;border-radius:2px;font:600 11px Archivo,sans-serif;margin:4px 4px 0 0}
   .wolf{border:1px solid var(--agree);border-radius:2px;padding:15px;margin-bottom:22px;animation:in .5s .3s both}
 
   .topic{font:600 25px/1.3 Archivo;letter-spacing:-.02em;padding:20px 0 4px;
@@ -123,6 +134,10 @@ const AD_SLOT   = "";   // paste a Display unit slot ID once approved
            border-radius:2px;font:600 19px/1.35 Archivo,sans-serif;outline:none;resize:none;min-height:120px}
   textarea:focus-visible{border-color:var(--agree)}
   textarea::placeholder{color:#4A5364;font-weight:400}
+  .mic{width:100%;margin-top:8px;padding:13px;background:var(--ink2);color:var(--mute);
+       border:1px solid var(--edge);border-radius:2px;
+       font:600 11px ui-monospace,Menlo,monospace;letter-spacing:.16em;text-transform:uppercase}
+  .mic.on{background:var(--agree);border-color:var(--agree);color:var(--ink)}
   .setup{line-height:1.55;font-size:15px;color:var(--mute)}
   .setup ol{margin:16px 0 0 18px}
   .setup li{margin-bottom:9px}
@@ -161,8 +176,11 @@ const CONFIGURED = /^https:\/\/.+\.supabase\.co\/?$/.test(SB_URL || "")
                    && !SB_URL.includes("YOUR-PROJECT")
                    && /^(sb_publishable_|eyJ)/.test(SB_KEY || "");
 
+/* The session is persisted on purpose. Identity is an anonymous Supabase user
+   now, and the write policies compare auth.uid() to values inside the room —
+   so losing the session on reload would lose your seat as well.             */
 const sb = CONFIGURED ? supabase.createClient(SB_URL, SB_KEY, {
-  auth: { persistSession: false }
+  auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
 }) : null;
 
 function store(k, v){
@@ -179,16 +197,40 @@ const voteKey = (code, n) => `pol:v:${code}:${n}`;
 const S = {
   screen: CONFIGURED ? "home" : "setup",
   me: null, name: "", code: "", isHost: false,
-  room: null, myVote: null, reroll: 0, note: "", busy: false,
-  modCounts: false, joinCode: "", laps: 2, topicDraft: ""
+  room: null, myVote: null, note: "", busy: false,
+  modCounts: false, joinCode: "", laps: 2, topicDraft: "", pick: null
 };
 
 (function identity(){
   const saved = store("pol:id");
   S.me   = (saved && saved.id) || "p" + Math.random().toString(36).slice(2,10);
   S.name = (saved && saved.name) || "";
-  store("pol:id", {id:S.me, name:S.name});
+  store("pol:id", Object.assign({}, saved, {id:S.me, name:S.name}));
 })();
+
+/* Anonymous sign-in. The room-write policies compare auth.uid() to
+   round->>'modId', so the browser needs a real user rather than a string it
+   made up — see supabase/rls-3-anon-auth.sql. If the project has anonymous
+   sign-ins switched off this falls through to the local id and the game runs
+   exactly as it did before, on the permissive policies. Deploy this build
+   first, turn sign-ins on, then apply rls-3. */
+async function signIn(){
+  if (!sb) return;
+  try {
+    let {data:{session}} = await sb.auth.getSession();
+    if (!session){
+      const {data, error} = await sb.auth.signInAnonymously();
+      if (error) throw error;
+      session = data.session;
+    }
+    // deliberately not written back to pol:id — saveSeat() records the id the
+    // seat was actually taken with, which is how resume() spots a stale one
+    const id = session && session.user && session.user.id;
+    if (id) S.me = id;
+  } catch (e){
+    console.warn("[auth] anonymous sign-in unavailable — using a local id", e && e.message);
+  }
+}
 
 const newCode = () => { const L="ABCDEFGHJKLMNPQRSTUVWXYZ";
   return [...Array(4)].map(()=>L[Math.random()*L.length|0]).join(""); };
@@ -199,6 +241,17 @@ function seeded(str){ let h=2166136261; for(let i=0;i<str.length;i++){h^=str.cha
 function categories(seed,n=6){ const r=seeded(seed), pool=[...CATEGORIES], out=[];
   while(out.length<n && pool.length) out.push(pool.splice(r()*pool.length|0,1)[0]);
   return out; }
+
+/* The six categories are room state, not a local suggestion — everyone sees
+   the same board, and the one the moderator locks in is swapped out for a
+   fresh one before the gavel passes. The other five carry over. */
+const catsOf = round => (round.cats && round.cats.length) ? round.cats : categories(S.code);
+function freshCategory(cats, used){
+  const taken = new Set([...cats, ...used]);
+  const pool = CATEGORIES.filter(c => !taken.has(c));
+  const src  = pool.length ? pool : CATEGORIES.filter(c => !cats.includes(c));
+  return src[Math.random() * src.length | 0];
+}
 
 const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g,
   c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -233,7 +286,7 @@ async function refresh(){
 
   const prev = S.room && S.room.round;
   const next = (rooms.data && rooms.data.round) || null;
-  if (prev && next && prev.n !== next.n){ S.myVote = null; S.reroll = 0; }
+  if (prev && next && prev.n !== next.n){ S.myVote = null; S.pick = null; }
 
   S.room = {players:P, round:next, votes:V};
 
@@ -271,6 +324,10 @@ function saveSeat(){
 async function resume(){
   const saved = store("pol:id");
   if (!CONFIGURED || !saved || !saved.room) return false;
+  // the seat belongs to whoever took it. Signing in anonymously changed this
+  // browser's id once, and a seat from before that switch is not ours to claim
+  // — rejoining fresh beats sitting down twice under two names.
+  if (saved.id !== S.me){ store("pol:id", {id:S.me, name:S.name}); return false; }
   const {data} = await sb.from("pol_rooms").select("code").eq("code", saved.room).maybeSingle();
   if (!data){ store("pol:id", {id:S.me, name:S.name}); return false; }
 
@@ -289,6 +346,8 @@ async function resume(){
 
 /* ────────────────────────────  scoring  ─────────────────────────── */
 
+const WOLF_MIN_SEATS = 5;   // mirrored in pol_reveal()
+
 function score(round, votes){
   votes = votes || {};
   const order = round.order || [];
@@ -297,9 +356,14 @@ function score(round, votes){
   const disagree = live.filter(id => votes[id] === "d");
   const pairs = Math.min(agree.length, disagree.length);
   let wolf = null;
-  if (agree.length === 1 && disagree.length >= 2) wolf = agree[0];
-  if (disagree.length === 1 && agree.length >= 2) wolf = disagree[0];
-  if (wolf === round.modId) wolf = null;          // moderator never takes it
+  // Seats at the table, not votes cast. Below five the room is small enough
+  // that standing alone is a coin flip rather than a stand, and the bonus
+  // starts outweighing the pairs it costs the moderator.
+  if (order.length >= WOLF_MIN_SEATS){
+    if (agree.length === 1 && disagree.length >= 2) wolf = agree[0];
+    if (disagree.length === 1 && agree.length >= 2) wolf = disagree[0];
+    if (wolf === round.modId) wolf = null;        // moderator never takes it
+  }
   return {agree, disagree, pairs, wolf};
 }
 
@@ -334,8 +398,21 @@ async function startGame(){
   const names = {}; order.forEach(id => names[id] = players[id].name);
   await sb.from("pol_rooms").update({
     round: {n:1, modId:order[0], phase:"topic", order, names, scores:{},
-            modCounts:S.modCounts, laps:S.laps}
+            modCounts:S.modCounts, laps:S.laps,
+            cats:categories(S.code), used:[]}
   }).eq("code", S.code);
+}
+
+/* The moderator locks a category before writing, so the room knows what it's
+   about to argue over. One round-state write, by the moderator, as always. */
+async function lockCategory(cat){
+  if (!cat) return;
+  S.busy = true; render();
+  await sb.from("pol_rooms")
+    .update({round: Object.assign({}, S.room.round, {category:cat})})
+    .eq("code", S.code);
+  S.pick = null; S.busy = false;
+  await refresh();
 }
 
 async function submitTopic(){
@@ -377,23 +454,85 @@ async function nextRound(){
   const round = S.room.round;
   const i = round.order.indexOf(round.modId);
   const done = round.n >= round.order.length * (round.laps || 1);
-  S.myVote = null; S.reroll = 0; S.topicDraft = "";
+  S.myVote = null; S.pick = null; S.topicDraft = "";
+
+  // spend the category: the five that weren't picked carry over, the one that
+  // was is replaced with something the room hasn't seen
+  const cats = catsOf(round).slice();
+  const used = (round.used || []).slice();
+  const spent = cats.indexOf(round.category);
+  if (spent >= 0){
+    used.push(round.category);
+    cats[spent] = freshCategory(cats, used);
+  }
+
   const next = Object.assign({}, round, {
     n: round.n + 1,
     modId: round.order[(i + 1) % round.order.length],
-    phase: done ? "final" : "topic"
+    phase: done ? "final" : "topic",
+    cats, used
   });
   delete next.revealed;
   delete next.topic;
+  delete next.category;
   await sb.from("pol_rooms").update({round: next}).eq("code", S.code);
 }
 
 function leave(){
-  unsubscribe();
+  unsubscribe(); stopDictation();
   store("pol:id", {id:S.me, name:S.name});
   Object.assign(S, {screen:"home", code:"", room:null, myVote:null, isHost:false, note:""});
   render();
 }
+
+/* ───────────────────────────  dictation  ────────────────────────── */
+/* Web Speech API, feature-detected. Chrome, Edge and Safari (including iOS)
+   have it; Firefox does not, and there the button simply isn't drawn. The
+   recogniser writes straight into the textarea rather than through render(),
+   for the same reason typing does: a repaint mid-sentence moves the cursor. */
+
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let recog = null, dictating = false, dictBase = "";
+
+function typeInto(text){
+  S.topicDraft = text;
+  const ta = document.getElementById("topic");
+  if (ta && ta.value !== text) ta.value = text;
+  const send = document.getElementById("send");
+  if (send) send.disabled = !text.trim();
+}
+
+function dictate(){
+  if (!SR) return;
+  if (dictating){ try { recog.stop(); } catch (e) {} return; }
+
+  recog = new SR();
+  recog.lang = navigator.language || "en-US";
+  recog.continuous = true;
+  recog.interimResults = true;
+  dictBase = S.topicDraft;
+
+  recog.onresult = e => {
+    let final = "", interim = "";
+    for (let i = e.resultIndex; i < e.results.length; i++){
+      const t = e.results[i][0].transcript;
+      if (e.results[i].isFinal) final += t; else interim += t;
+    }
+    const tidy = s => s.replace(/\s+/g, " ").trim().slice(0, 180);
+    if (final) dictBase = tidy(dictBase + " " + final);
+    typeInto(tidy(dictBase + " " + interim));
+  };
+  recog.onerror = e => {
+    S.note = e.error === "not-allowed" || e.error === "service-not-allowed"
+      ? "Microphone blocked. Allow it in your browser's site settings."
+      : e.error === "no-speech" ? "" : "Dictation stopped. Type it instead.";
+  };
+  recog.onend = () => { dictating = false; render(true); };
+
+  try { recog.start(); dictating = true; S.note = ""; render(true); }
+  catch (e) { dictating = false; }
+}
+function stopDictation(){ if (dictating){ try { recog.stop(); } catch (e) {} } }
 
 /* ──────────────────────────────  ads  ───────────────────────────── */
 
@@ -427,7 +566,7 @@ const app = document.getElementById("app");
 let lastSig = "";
 function render(force){
   // the 2s poll would otherwise wipe the textarea mid-sentence
-  const sig = JSON.stringify([S.screen, S.code, S.myVote, S.reroll,
+  const sig = JSON.stringify([S.screen, S.code, S.myVote, S.pick, dictating,
                               S.note, S.busy, S.modCounts, S.laps, S.room]);
   if (!force && sig === lastSig) return;
   lastSig = sig;
@@ -486,7 +625,7 @@ const home = () => `
   <div class="mono mt32" style="line-height:1.8">
     Say something the room will split on<br>
     Score a point for every pair you divide<br>
-    Stand alone against everyone and take one for yourself
+    Stand alone against a room of five or more and take one for yourself
   </div>
   <a href="/privacy" class="mono" style="padding-top:20px;text-decoration:underline">Privacy</a>`;
 
@@ -539,6 +678,12 @@ function game(){
     .map(id => ({id, name:(round.names||{})[id], pts:(round.scores||{})[id] || 0}))
     .sort((a,b) => b.pts - a.pts);
 
+  // shown on the reveal and, so the wait has something to read, to everyone
+  // sitting out the moderator's turn
+  const board = (hi) => standings.map(s => `<div class="row">
+      <span style="color:${s.id === hi ? "var(--paper)" : "var(--mute)"}">${esc(s.name)}</span>
+      <span style="font-family:ui-monospace,Menlo,monospace">${s.pts}</span></div>`).join("");
+
   if (round.phase === "final"){
     const top = standings[0] || {name:"—", pts:0};
     return head + `
@@ -552,31 +697,51 @@ function game(){
   }
 
   if (round.phase === "topic"){
-    const cats = categories(`${S.code}:${round.n}:${S.reroll}`);
+    const cats = catsOf(round);
+
     if (!iAmMod){
       return head + `
         <div class="eyebrow">Moderator</div>
         <div style="font:900 32px/1 Archivo;letter-spacing:-.03em">${esc(modName)}</div>
-        <div class="setup" style="padding-top:10px">is writing a statement…</div>
+        <div class="setup" style="padding-top:10px">${round.category
+          ? "is writing a statement…"
+          : "is picking a category…"}</div>
+        ${round.category ? `<div class="cat locked mt24">${esc(round.category)}</div>` : ""}
+        <div class="eyebrow mt32">Standings</div>
+        <div>${board(round.modId)}</div>
         <div class="grow"></div>
-        <div class="mono">Get ready to pick a side</div>`;
+        <div class="mono mt32">Get ready to pick a side</div>`;
     }
+
+    if (!round.category){
+      return head + `
+        <div class="eyebrow">You're the moderator</div>
+        <div class="mb24" style="font:600 22px/1.35 Archivo">Pick a category. The room sees it too — then write something they'll split on.</div>
+        <div class="grid2 mb16">${cats.map(c =>
+          `<button class="cat ${S.pick === c ? "on" : ""}" data-cat="${esc(c)}">${esc(c)}</button>`).join("")}</div>
+        <div class="setup" style="font-size:13px">Whichever you take is retired for the game. The other five stay for the next moderator.</div>
+        <div class="grow"></div>
+        <button class="btn mt32" id="lock" ${S.pick && !S.busy ? "" : "disabled"}>Lock it in</button>`;
+    }
+
     return head + `
-      <div class="eyebrow">You're the moderator</div>
-      <div class="mb24" style="font:600 22px/1.35 Archivo">Write something the room will split on. Score a point for every pair you divide.</div>
+      <div class="eyebrow">Your category</div>
+      <div class="cat locked mb24">${esc(round.category)}</div>
+      <div class="mb16" style="font:600 22px/1.35 Archivo">Write something the room will split on. Score a point for every pair you divide.</div>
       <textarea id="topic" placeholder="Pineapple belongs on pizza." maxlength="180">${esc(S.topicDraft)}</textarea>
-      <div class="eyebrow" style="margin-top:22px">Stuck? Try one of these</div>
-      <div class="grid2 mb16">${cats.map(c => `<div class="cat">${esc(c)}</div>`).join("")}</div>
-      <button class="mono mb32" id="reroll" style="text-align:left">New categories ↻</button>
+      ${SR ? `<button class="mic ${dictating ? "on" : ""}" id="mic">${
+        dictating ? "Listening — tap to stop" : "Speak it instead"}</button>` : ""}
+      ${S.note ? `<div class="err">${esc(S.note)}</div>` : ""}
       <div class="grow"></div>
-      <button class="btn" id="send" ${S.topicDraft.trim() ? "" : "disabled"}>Send to the room</button>`;
+      <button class="btn mt32" id="send" ${S.topicDraft.trim() ? "" : "disabled"}>Send to the room</button>`;
   }
 
   if (round.phase === "voting"){
     const votes = (S.room.votes && S.room.votes[round.n]) || {};
     const cast = Object.keys(votes).length;
     return head + `
-      <div class="eyebrow">${iAmMod ? "Your statement" : esc(modName) + " says"}</div>
+      <div class="eyebrow">${iAmMod ? "Your statement" : esc(modName) + " says"}${
+        round.category ? " · " + esc(round.category) : ""}</div>
       <div class="topic">${esc(round.topic || "")}</div>
 
       <div class="eyebrow">Your vote</div>
@@ -602,7 +767,7 @@ function game(){
                  ...r.disagree.slice(r.pairs).map(id => [id,"d"])];
 
   return head + `
-    <div class="eyebrow">${esc(modName)} said</div>
+    <div class="eyebrow">${esc(modName)} said${round.category ? " · " + esc(round.category) : ""}</div>
     <div class="topic">${esc(round.topic || "")}</div>
 
     <div class="eyebrow">The room</div>
@@ -616,8 +781,14 @@ function game(){
           <span class="mono">+1</span>
           <span class="side d">${esc((round.names||{})[d])}</span></div>`).join("")}
       ${r.pairs === 0 ? `<div class="setup" style="padding:14px 0">The room agreed with itself. No pairs, no points.</div>` : ""}
-      ${spare.length ? `<div style="padding-top:10px">${spare.map(([id,side]) =>
-        `<span class="chip" style="border:1px solid var(--${side === "a" ? "agree" : "disagree"});color:var(--${side === "a" ? "agree" : "disagree"})">${esc((round.names||{})[id])} unpaired</span>`).join("")}</div>` : ""}
+      ${spare.map(([id,side],i) => `<div class="pair" style="animation-delay:${(pairs.length+i)*90}ms">
+          ${side === "a"
+            ? `<span class="side a open">${esc((round.names||{})[id])}</span>`
+            : `<span class="side"></span>`}
+          <span class="mono ghost">+1</span>
+          ${side === "d"
+            ? `<span class="side d open">${esc((round.names||{})[id])}</span>`
+            : `<span class="side"></span>`}</div>`).join("")}
     </div>
 
     ${r.wolf ? `<div class="wolf">
@@ -625,9 +796,7 @@ function game(){
         <div style="font:600 18px Archivo">${esc((round.names||{})[r.wolf])} was the only one.</div></div>` : ""}
 
     <div class="eyebrow">Standings</div>
-    <div class="mb32">${standings.map(s => `<div class="row">
-        <span style="color:${s.id === round.modId ? "var(--paper)" : "var(--mute)"}">${esc(s.name)}</span>
-        <span style="font-family:ui-monospace,Menlo,monospace">${s.pts}</span></div>`).join("")}</div>
+    <div class="mb32">${board(round.modId)}</div>
 
     <div class="grow"></div>
     ${iAmMod
@@ -649,18 +818,22 @@ function bind(){
   const topicEl = document.getElementById("topic");
   if (topicEl) topicEl.oninput = e => {
     S.topicDraft = e.target.value;                    // no re-render: keeps the cursor put
+    dictBase = e.target.value;                        // typing wins over what was dictated
     const send = document.getElementById("send");
     if (send) send.disabled = !S.topicDraft.trim();
   };
   document.querySelectorAll("[data-laps]").forEach(b =>
     b.onclick = () => { S.laps = +b.dataset.laps; render(true); });
+  document.querySelectorAll("[data-cat]").forEach(b =>
+    b.onclick = () => { S.pick = b.dataset.cat; render(); });
 
+  on("mic",    dictate);
+  on("lock",   () => lockCategory(S.pick));
   on("send",   submitTopic);
   on("host",   () => joinRoom(newCode(), true));
   on("dojoin", () => S.joinCode.length === 4 && joinRoom(S.joinCode, false));
   on("toggle", () => { S.modCounts = !S.modCounts; render(); });
   on("start",  startGame);
-  on("reroll", () => { S.reroll++; render(); });
   on("reveal", reveal);
   on("next",   nextRound);
   on("leave",  leave);
@@ -670,7 +843,11 @@ function bind(){
 
 initAds();
 render();
-resume();   // drops you back into your seat if you reload mid-game
+(async () => {
+  await signIn();     // settles who this browser is before anything is written
+  render(true);
+  await resume();     // drops you back into your seat if you reload mid-game
+})();
 </script>
 </body>
 </html>
