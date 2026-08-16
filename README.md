@@ -24,6 +24,8 @@ to `main` deploys `polarized/` as static assets, no build step involved.
 polarized/     index.html, ads.txt   ← the deployed site root
   privacy/     index.html          ← served at /privacy
 supabase/      setup.sql             ← run once on a fresh project
+               rls-*.sql             ← hardening, run in order
+tests/         *.mjs                 ← scoring parity, run with node
 README.md
 .gitignore
 ```
@@ -96,6 +98,11 @@ excluded unless `modCounts` is on):
 
 - moderator scores `min(agree, disagree)` — one point per pair
 - a lone dissenter (1 vs 2+) scores +1; the moderator never takes this
+
+Scoring runs in the database, in `pol_reveal()`. `score()` in `index.html` is
+kept in step because the reveal screen redraws pairs from `round.revealed`.
+`tests/score-parity.mjs` checks the two agree across generated rounds — run it
+after touching either.
 
 ## Gameplay is settled
 
