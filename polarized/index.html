@@ -210,26 +210,46 @@ const S = {
 
 /* Anonymous sign-in. The room-write policies compare auth.uid() to
    round->>'modId', so the browser needs a real user rather than a string it
-   made up — see supabase/rls-3-anon-auth.sql. If the project has anonymous
-   sign-ins switched off this falls through to the local id and the game runs
-   exactly as it did before, on the permissive policies. Deploy this build
-   first, turn sign-ins on, then apply rls-3. */
+   made up — see supabase/rls-3-anon-auth.sql.
+
+   Those policies are applied now, which means a browser without a session
+   cannot write anything: it would join a room, appear to sit down, and save
+   nothing. So this gates the home screen rather than carrying on with the
+   local id. Three states, because "haven't tried yet" and "tried and failed"
+   are not the same screen.
+
+   A returning player whose user was pruned by pol_purge_anon_users() lands
+   here too, and it costs them nothing: the stored refresh token is dead, so
+   getSession() comes back empty and they sign in again as somebody new. */
+let authState = "pending";      // → "ok" | "failed"
+
 async function signIn(){
   if (!sb) return;
-  try {
-    let {data:{session}} = await sb.auth.getSession();
-    if (!session){
-      const {data, error} = await sb.auth.signInAnonymously();
-      if (error) throw error;
-      session = data.session;
+  for (let tries = 0; tries < 2; tries++){
+    try {
+      let session = null;
+      try { session = (await sb.auth.getSession()).data.session; } catch (e) {}
+      if (!session){
+        const {data, error} = await sb.auth.signInAnonymously();
+        if (error) throw error;
+        session = data && data.session;
+      }
+      // deliberately not written back to pol:id — saveSeat() records the id the
+      // seat was actually taken with, which is how resume() spots a stale one
+      const id = session && session.user && session.user.id;
+      if (id){ S.me = id; authState = "ok"; return; }
+    } catch (e){
+      console.warn("[auth] anonymous sign-in failed", e && e.message);
     }
-    // deliberately not written back to pol:id — saveSeat() records the id the
-    // seat was actually taken with, which is how resume() spots a stale one
-    const id = session && session.user && session.user.id;
-    if (id) S.me = id;
-  } catch (e){
-    console.warn("[auth] anonymous sign-in unavailable — using a local id", e && e.message);
   }
+  authState = "failed";
+}
+
+async function retryAuth(){
+  authState = "pending"; S.note = ""; render(true);
+  await signIn();
+  render(true);
+  if (authState === "ok") await resume();
 }
 
 const newCode = () => { const L="ABCDEFGHJKLMNPQRSTUVWXYZ";
@@ -567,7 +587,7 @@ let lastSig = "";
 function render(force){
   // the 2s poll would otherwise wipe the textarea mid-sentence
   const sig = JSON.stringify([S.screen, S.code, S.myVote, S.pick, dictating,
-                              S.note, S.busy, S.modCounts, S.laps, S.room]);
+                              S.note, S.busy, S.modCounts, S.laps, S.room, authState]);
   if (!force && sig === lastSig) return;
   lastSig = sig;
 
@@ -612,14 +632,17 @@ const home = () => `
   <div class="eyebrow">Your name</div>
   <input id="name" class="mb24" value="${esc(S.name)}" placeholder="Ryan" maxlength="14" autocomplete="off">
 
-  <button class="btn mb32" id="host">Start a room</button>
+  <button class="btn mb32" id="host" ${authState === "ok" ? "" : "disabled"}>Start a room</button>
 
   <div class="eyebrow">Or join with a code</div>
   <div style="display:flex;gap:8px">
     <input id="join" value="${esc(S.joinCode)}" placeholder="ABCD" maxlength="4" autocomplete="off"
            style="text-align:center;font:600 24px ui-monospace,Menlo,monospace;letter-spacing:.2em">
-    <button class="btn" id="dojoin" style="width:auto;padding:0 26px">Join</button>
+    <button class="btn" id="dojoin" style="width:auto;padding:0 26px"
+            ${authState === "ok" ? "" : "disabled"}>Join</button>
   </div>
+  ${authState === "failed" ? `<div class="err">Couldn't reach the game server. Nothing you do here would save.
+    <button class="link" id="retryauth" style="padding:0 0 0 4px">Try again</button></div>` : ""}
   ${S.note ? `<div class="err">${esc(S.note)}</div>` : ""}
   <div class="grow"></div>
   <div class="mono mt32" style="line-height:1.8">
@@ -827,6 +850,7 @@ function bind(){
   document.querySelectorAll("[data-cat]").forEach(b =>
     b.onclick = () => { S.pick = b.dataset.cat; render(); });
 
+  on("retryauth", retryAuth);
   on("mic",    dictate);
   on("lock",   () => lockCategory(S.pick));
   on("send",   submitTopic);
@@ -846,7 +870,9 @@ render();
 (async () => {
   await signIn();     // settles who this browser is before anything is written
   render(true);
-  await resume();     // drops you back into your seat if you reload mid-game
+  // no session, no writes — resuming would only put them in a room they
+  // cannot save a vote to
+  if (authState === "ok") await resume();
 })();
 </script>
 </body>

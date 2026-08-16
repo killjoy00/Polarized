@@ -67,10 +67,14 @@ same board.
 
 Identity is an anonymous Supabase user. The browser calls `signInAnonymously()`
 on load and uses `auth.uid()` as its player id, which is what gives the write
-policies something to compare against. If anonymous sign-ins are switched off
-the app falls back to a random local id and runs on the permissive policies —
-so the client is safe to deploy before the project is switched over, and
-`supabase/rls-3-anon-auth.sql` is not.
+policies something to compare against.
+
+Since those policies are applied, a browser without a session cannot write
+anything — so a failed sign-in disables the home screen and says so, rather
+than letting someone join a room and save nothing. It retries once on its own
+and offers a button for the third go. The same path catches a returning player
+whose user has been pruned: dead refresh token, empty session, sign in again as
+somebody new.
 
 `public.pol_purge_old_rooms()` deletes rooms older than 24 hours, scheduled
 hourly with `pg_cron`. It deletes rooms only — the foreign keys cascade, so
@@ -206,7 +210,8 @@ Status as of the move to a dedicated Supabase project.
 - **Keep-alive.** `.github/workflows/keepalive.yml` pings daily. GitHub disables
   scheduled workflows in repos idle 60 days; a Cloudflare Worker cron has no
   such rule if that ever bites.
-- **The old shared project** (`euxugjfibsurltcazago`) still runs, still holds
+- **The old shared project** (`euxugjfibsurltcazago`) is still up — its REST
+  endpoint answers, so it is neither paused nor deleted — still holds
   the old `pol_` tables and stale rooms, and still carries `play_%` policy
   residue on foodfinder's tables from the original collision. Cleaning it means
   editing a database that runs someone else's app, so it is now two files.
@@ -221,8 +226,17 @@ Status as of the move to a dedicated Supabase project.
   simulated copy of the collision locally — three tables, one of them with a
   policy of its own — and foodfinder's reads survived. Still do it with the
   owner present.
-- **Anonymous users accumulate.** One `auth.users` row per browser, and nothing
-  prunes them.
+- **Anonymous users.** [`rls-4-purge-anon-users.sql`](supabase/rls-4-purge-anon-users.sql)
+  is written and needs running once: it adds `pol_purge_anon_users()`, daily
+  under `pg_cron`, deleting anonymous users idle for seven days. Deleting one
+  costs the player nothing — their next visit finds a dead refresh token and
+  signs in again — but it must never delete somebody mid-game, which is why
+  staleness looks at their sessions and not only at when they last signed in.
+  The window is far longer than the 24 hours a room lives, on purpose.
+
+  Read the preview query at the top of the file before creating anything. It
+  reads Supabase's auth schema rather than ours, and that schema is not ours to
+  depend on.
 
 **Worth knowing**
 
