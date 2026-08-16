@@ -348,12 +348,18 @@ async function submitTopic(){
   S.topicDraft = ""; S.busy = false;
 }
 
+/* Insert first, update if the row is already there. Not an upsert: Postgres
+   wants a table-wide SELECT for INSERT ... ON CONFLICT, and browsers no
+   longer have one — they can read who voted, never what. Changing your mind
+   costs a second round trip, which nobody can feel.                        */
 async function vote(choice){
   const n = S.room.round.n;
   S.myVote = choice;
   store(voteKey(S.code, n), choice);   // the only copy we can read back
   render();
-  await sb.from("pol_votes").upsert({code:S.code, n, pid:S.me, choice});
+  const {error} = await sb.from("pol_votes").insert({code:S.code, n, pid:S.me, choice});
+  if (error) await sb.from("pol_votes").update({choice})
+                     .match({code:S.code, n, pid:S.me});
 }
 
 /* Scoring lives in the database — see supabase/rls-1-reveal-function.sql.

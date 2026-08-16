@@ -22,5 +22,12 @@ grant update (choice)               on public.pol_votes to anon, authenticated;
 -- nothing in the app deletes a vote; rooms cascade theirs away on purge
 revoke delete on public.pol_votes from anon, authenticated;
 
+-- One consequence, learned the hard way: the app cannot upsert a vote any
+-- more. Postgres requires a table-wide SELECT for INSERT ... ON CONFLICT DO
+-- UPDATE, and column-level grants do not satisfy it — the insert fails with
+-- 42501 even though every column it touches is granted. index.html therefore
+-- inserts first and updates on conflict. Do not "simplify" that back into an
+-- upsert without granting table SELECT, which would undo this whole file.
+
 -- Check it: this should fail with a permission error.
 --   select choice from public.pol_votes limit 1;   -- as anon
