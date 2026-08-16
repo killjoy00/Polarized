@@ -20,6 +20,9 @@
 
    Run supabase/setup.sql first, or nothing will save.
 
+   Deploys happen on push to main — Cloudflare builds this directory
+   straight from the repo. There is nothing to upload by hand.
+
    Free projects sleep after ~7 days idle. Keep something pinging
    this one, or the first person to open the game after a quiet
    fortnight gets a room that won't create.
@@ -169,6 +172,10 @@ function store(k, v){
   } catch { return null; }
 }
 
+/* your own vote, per room and round — the server stops handing choices back
+   to browsers before the reveal, so this is what survives a reload */
+const voteKey = (code, n) => `pol:v:${code}:${n}`;
+
 const S = {
   screen: CONFIGURED ? "home" : "setup",
   me: null, name: "", code: "", isHost: false,
@@ -214,13 +221,15 @@ async function refresh(){
   const [rooms, players, votes] = await Promise.all([
     sb.from("pol_rooms").select("round").eq("code", S.code).maybeSingle(),
     sb.from("pol_players").select("pid,name,joined").eq("code", S.code),
-    sb.from("pol_votes").select("n,pid,choice").eq("code", S.code)
+    // no `choice` — the database won't hand it out before the reveal, and the
+    // only thing the client needs meanwhile is who has voted
+    sb.from("pol_votes").select("n,pid").eq("code", S.code)
   ]);
 
   const P = {};
   (players.data || []).forEach(p => P[p.pid] = {name:p.name, joined:p.joined});
   const V = {};
-  (votes.data || []).forEach(v => { (V[v.n] = V[v.n] || {})[v.pid] = v.choice; });
+  (votes.data || []).forEach(v => { (V[v.n] = V[v.n] || {})[v.pid] = true; });
 
   const prev = S.room && S.room.round;
   const next = (rooms.data && rooms.data.round) || null;
@@ -228,9 +237,11 @@ async function refresh(){
 
   S.room = {players:P, round:next, votes:V};
 
-  // a reconnecting player gets their vote back instead of appearing to have not voted
+  // a reconnecting player gets their vote back instead of appearing to have not
+  // voted — from local storage now, since the server won't tell anyone, us
+  // included, what anyone picked before the reveal
   if (next && S.myVote == null){
-    const mine = (V[next.n] || {})[S.me];
+    const mine = store(voteKey(S.code, next.n));
     if (mine) S.myVote = mine;
   }
 
@@ -338,22 +349,22 @@ async function submitTopic(){
 }
 
 async function vote(choice){
-  S.myVote = choice; render();
-  await sb.from("pol_votes").upsert({code:S.code, n:S.room.round.n, pid:S.me, choice});
+  const n = S.room.round.n;
+  S.myVote = choice;
+  store(voteKey(S.code, n), choice);   // the only copy we can read back
+  render();
+  await sb.from("pol_votes").upsert({code:S.code, n, pid:S.me, choice});
 }
 
+/* Scoring lives in the database — see supabase/rls-1-reveal-function.sql.
+   Doing it here would mean every client could read every vote while the
+   round was still open, which is how you cheat at this game.              */
 async function reveal(){
   S.busy = true; render();
-  const round = S.room.round;
-  const votes = (S.room.votes && S.room.votes[round.n]) || {};
-  const r = score(round, votes);
-  const scores = Object.assign({}, round.scores);
-  scores[round.modId] = (scores[round.modId] || 0) + r.pairs;
-  if (r.wolf) scores[r.wolf] = (scores[r.wolf] || 0) + 1;
-  await sb.from("pol_rooms")
-    .update({round: Object.assign({}, round, {phase:"reveal", scores, revealed:votes})})
-    .eq("code", S.code);
+  const {error} = await sb.rpc("pol_reveal", {p_code: S.code});
   S.busy = false;
+  if (error){ S.note = "Couldn't reveal. Try again."; return render(); }
+  await refresh();
 }
 
 async function nextRound(){

@@ -17,12 +17,15 @@ separate phones make hidden voting free.
 
 One static `index.html`. No build step, no framework, no bundler. Vanilla JS
 rendering template literals into a single `#app` div. Supabase from CDN.
-~650 lines including CSS. Deployed on Cloudflare Pages.
+~650 lines including CSS. Served by a git-connected Cloudflare Worker: a push
+to `main` deploys `polarized/` as static assets, no build step involved.
 
 ```
 polarized/     index.html, ads.txt   ← the deployed site root
   privacy/     index.html          ← served at /privacy
 supabase/      setup.sql             ← run once on a fresh project
+               rls-*.sql             ← hardening, run in order
+tests/         *.mjs                 ← scoring parity, run with node
 README.md
 .gitignore
 ```
@@ -96,6 +99,11 @@ excluded unless `modCounts` is on):
 - moderator scores `min(agree, disagree)` — one point per pair
 - a lone dissenter (1 vs 2+) scores +1; the moderator never takes this
 
+Scoring runs in the database, in `pol_reveal()`. `score()` in `index.html` is
+kept in step because the reveal screen redraws pairs from `round.revealed`.
+`tests/score-parity.mjs` checks the two agree across generated rounds — run it
+after touching either.
+
 ## Gameplay is settled
 
 Extensively playtested. Do not add mechanics unprompted. Already considered and
@@ -125,11 +133,9 @@ Status as of the move to a dedicated Supabase project.
   disappear, not just by the job row existing
 - Realtime confirmed working under the app's exact subscription pattern
 - Deployed and playtested with three players
+- Git deploys: a Cloudflare Worker builds `polarized/` from `main` on push
 
 **Open**
-- **Git-connected Cloudflare Pages.** Still direct-upload, so deploying needs a
-  desktop or an API token. Root directory `polarized/`, no build command. Move
-  the `polarized.planitnow.us` domain across, then delete the old project.
 - **RLS.** Policies are `using(true)` on all three tables. Two holes, and they
   are not equally serious:
   - *Votes are readable before the reveal.* This is a cheating hole, not a
