@@ -105,9 +105,16 @@ only in `round.revealed`, written by `pol_reveal()` when the moderator reveals.
 2. **Sync is Supabase Realtime plus a 2-second polling backstop.** Realtime was
    unreliable in development; polling is what actually made the lobby work. Do
    not remove the poll without verifying realtime end to end on real devices
-   first. Because both call `refresh()`, several can be in flight at once —
-   `refreshSeq` drops any reply that a newer one has already overtaken. Without
-   it a slow reply lands last and drags the screen back to the previous round.
+   first. Because both call `refresh()`, several can be in flight at once, so a
+   reply is dropped when a **newer reply has already been applied** — compared
+   against `refreshDone`, never against the newest request issued. That
+   distinction is the whole point: guarding on the newest request means any
+   round trip slower than the 2s poll is superseded before it can resolve, so
+   every reply is discarded, `render()` is never reached and the screen freezes
+   where it stood. That shipped once. On a connection slower than the poll the
+   lobby never appeared and joining a room looked like it had quietly failed,
+   while every fast connection behaved perfectly — test this one with a lagged
+   backend, not just a local one.
 
 3. **`render()` compares a JSON signature of state and returns early when
    nothing changed, and saves/restores focus and cursor position when it does
