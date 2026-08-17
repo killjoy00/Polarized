@@ -289,7 +289,7 @@ const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g,
    two people joining at the same moment can never overwrite each other.
    Only the moderator writes rooms.round.                                    */
 
-let channel = null, poll = null, refreshSeq = 0;
+let channel = null, poll = null, refreshSeq = 0, refreshDone = 0;
 
 function startPolling(){
   if (poll) return;
@@ -309,9 +309,16 @@ async function refresh(){
   ]);
 
   // Realtime fires this per vote row and the 2s poll fires it independently, so
-  // several can be in flight at once. Without this, a slow reply landing after a
-  // newer one drags the screen back to the round we already left.
-  if (seq !== refreshSeq) return;
+  // several can be in flight at once. Without a guard, a slow reply landing after
+  // a newer one drags the screen back to the round we already left.
+  //
+  // Compare against the newest reply APPLIED, never the newest request issued.
+  // Against the latter, a round trip slower than the 2s poll is superseded before
+  // it can resolve — every reply is discarded, render() is never reached, and the
+  // screen freezes wherever it was. That shipped once: on a slow phone the lobby
+  // never appeared and joining a room looked like it had silently failed.
+  if (seq < refreshDone) return;
+  refreshDone = seq;
 
   const P = {};
   (players.data || []).forEach(p => P[p.pid] = {name:p.name, joined:p.joined});
