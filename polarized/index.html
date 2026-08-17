@@ -208,6 +208,14 @@ const S = {
   store("pol:id", Object.assign({}, saved, {id:S.me, name:S.name}));
 })();
 
+/* A shared room link — /?r=ABCD — only prefills the code. It deliberately does
+   not auto-join: you still need a name, and joining is still a deliberate tap.
+   Four letters, same alphabet newCode() draws from. */
+(function fromLink(){
+  const m = /[?&]r=([A-Za-z]{4})(?:&|$)/.exec(location.search);
+  if (m) S.joinCode = m[1].toUpperCase();
+})();
+
 /* Anonymous sign-in. The room-write policies compare auth.uid() to
    round->>'modId', so the browser needs a real user rather than a string it
    made up — see supabase/rls-3-anon-auth.sql.
@@ -281,7 +289,7 @@ const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g,
    two people joining at the same moment can never overwrite each other.
    Only the moderator writes rooms.round.                                    */
 
-let channel = null, poll = null;
+let channel = null, poll = null, refreshSeq = 0;
 
 function startPolling(){
   if (poll) return;
@@ -291,6 +299,7 @@ function stopPolling(){ if (poll){ clearInterval(poll); poll = null; } }
 
 async function refresh(){
   if (!S.code) return;
+  const seq = ++refreshSeq;
   const [rooms, players, votes] = await Promise.all([
     sb.from("pol_rooms").select("round").eq("code", S.code).maybeSingle(),
     sb.from("pol_players").select("pid,name,joined").eq("code", S.code),
@@ -298,6 +307,11 @@ async function refresh(){
     // only thing the client needs meanwhile is who has voted
     sb.from("pol_votes").select("n,pid").eq("code", S.code)
   ]);
+
+  // Realtime fires this per vote row and the 2s poll fires it independently, so
+  // several can be in flight at once. Without this, a slow reply landing after a
+  // newer one drags the screen back to the round we already left.
+  if (seq !== refreshSeq) return;
 
   const P = {};
   (players.data || []).forEach(p => P[p.pid] = {name:p.name, joined:p.joined});
@@ -451,12 +465,25 @@ async function submitTopic(){
    costs a second round trip, which nobody can feel.                        */
 async function vote(choice){
   const n = S.room.round.n;
+  const was = S.myVote;
   S.myVote = choice;
   store(voteKey(S.code, n), choice);   // the only copy we can read back
   render();
-  const {error} = await sb.from("pol_votes").insert({code:S.code, n, pid:S.me, choice});
-  if (error) await sb.from("pol_votes").update({choice})
-                     .match({code:S.code, n, pid:S.me});
+  let {error} = await sb.from("pol_votes").insert({code:S.code, n, pid:S.me, choice});
+  if (error) ({error} = await sb.from("pol_votes").update({choice})
+                                .match({code:S.code, n, pid:S.me}));
+
+  // If both writes failed there is no row, and "Locked in" would be a lie the
+  // player cannot catch: nobody can read `choice` back to check. Put the screen
+  // back where it was and say so.
+  if (error){
+    S.myVote = was;
+    store(voteKey(S.code, n), was);
+    S.note = "That vote didn't save. Tap again.";
+    render();
+  } else if (S.note){
+    S.note = ""; render();
+  }
 }
 
 /* Scoring lives in the database — see supabase/rls-1-reveal-function.sql.
@@ -473,8 +500,25 @@ async function reveal(){
 async function nextRound(){
   const round = S.room.round;
   const i = round.order.indexOf(round.modId);
-  const done = round.n >= round.order.length * (round.laps || 1);
+  // the game was always going to end on this round, so a newcomer arriving now
+  // does not get to extend it
+  const finishing = round.n >= round.order.length * (round.laps || 1);
   S.myVote = null; S.pick = null; S.topicDraft = "";
+
+  // Seat anyone who joined after the game started. They take the last chairs,
+  // in the order they arrived, and moderate in turn like everyone else — which
+  // makes the game longer, since its length is seats × laps. Only the moderator
+  // writes round, so this reconciliation happens here and nowhere else.
+  const seated  = new Set(round.order);
+  const players = (S.room && S.room.players) || {};
+  const late = finishing ? [] : Object.keys(players)
+    .filter(id => !seated.has(id))
+    .sort((a, b) => players[a].joined - players[b].joined);
+  const order = late.length ? round.order.concat(late) : round.order;
+  const names = Object.assign({}, round.names);
+  late.forEach(id => names[id] = players[id].name);
+
+  const done = round.n >= order.length * (round.laps || 1);
 
   // spend the category: the five that weren't picked carry over, the one that
   // was is replaced with something the room hasn't seen
@@ -488,9 +532,9 @@ async function nextRound(){
 
   const next = Object.assign({}, round, {
     n: round.n + 1,
-    modId: round.order[(i + 1) % round.order.length],
+    modId: order[(i + 1) % order.length],
     phase: done ? "final" : "topic",
-    cats, used
+    order, names, cats, used
   });
   delete next.revealed;
   delete next.topic;
@@ -498,8 +542,34 @@ async function nextRound(){
   await sb.from("pol_rooms").update({round: next}).eq("code", S.code);
 }
 
+/* Reading four letters across a table is the first thing that goes wrong at a
+   party. The link carries the code; the native share sheet if there is one,
+   the clipboard if not, and the bare URL to read out if neither works. */
+const roomLink = () =>
+  location.origin + location.pathname.replace(/index\.html$/, "") + "?r=" + S.code;
+
+let noteTimer = null;
+function flash(msg){
+  S.note = msg; render();
+  clearTimeout(noteTimer);
+  noteTimer = setTimeout(() => { if (S.note === msg){ S.note = ""; render(); } }, 2500);
+}
+
+async function shareRoom(){
+  const url = roomLink();
+  try {
+    if (navigator.share){
+      await navigator.share({title:"Polarized", text:`Join my room — ${S.code}`, url});
+      return;
+    }
+  } catch (e){ if (e && e.name === "AbortError") return; }   // they closed the sheet
+  try { await navigator.clipboard.writeText(url); flash("Link copied."); }
+  catch (e){ flash(url); }
+}
+
 function leave(){
   unsubscribe(); stopDictation();
+  clearTimeout(noteTimer);
   store("pol:id", {id:S.me, name:S.name});
   Object.assign(S, {screen:"home", code:"", room:null, myVote:null, isHost:false, note:""});
   render();
@@ -617,7 +687,7 @@ const setup = () => `
       <li>Supabase dashboard → your project → <b>Project Settings → Data API</b></li>
       <li>Copy the <b>Project URL</b> into <code>SB_URL</code></li>
       <li>Copy the <b>anon public</b> key into <code>SB_KEY</code></li>
-      <li>Run <code>polarized-setup-v2.sql</code> in the SQL editor</li>
+      <li>Run <code>supabase/setup.sql</code> in the SQL editor</li>
       <li>Reload</li>
     </ol>
     <div class="mt24">The anon key is meant to be public — it ships in every browser. Row-level
@@ -658,7 +728,9 @@ function lobby(){
   if (S.room && S.room.round){ S.screen = "game"; return game(); }
   return `
   <div class="eyebrow">Room code — say it out loud</div>
-  <div class="code mb32">${esc(S.code)}</div>
+  <div class="code mb16">${esc(S.code)}</div>
+  <button class="btn ghost mb8" id="share">Share the link</button>
+  ${S.note ? `<div class="err mb16">${esc(S.note)}</div>` : `<div class="mb24"></div>`}
 
   <div class="eyebrow">In the room · ${ids.length}</div>
   <div class="mb24">
@@ -719,6 +791,20 @@ function game(){
       <button class="btn ghost mt32" id="leave">Back to start</button>`;
   }
 
+  // Joined after the game started. nextRound() seats them; until then their
+  // vote would be stored and never scored, so don't offer them one.
+  if (!(round.order || []).includes(S.me)){
+    return head + `
+      <div class="eyebrow">You're in the room</div>
+      <div style="font:900 32px/1 Archivo;letter-spacing:-.03em">${esc(S.name || "Player")}</div>
+      <div class="setup" style="padding-top:10px">The game had already started. You take a
+      seat when this round ends — then you vote and moderate like everyone else.</div>
+      <div class="eyebrow mt32">Standings</div>
+      <div>${board(round.modId)}</div>
+      <div class="grow"></div>
+      <div class="mono mt32">Waiting for the round to end</div>`;
+  }
+
   if (round.phase === "topic"){
     const cats = catsOf(round);
 
@@ -761,7 +847,9 @@ function game(){
 
   if (round.phase === "voting"){
     const votes = (S.room.votes && S.room.votes[round.n]) || {};
-    const cast = Object.keys(votes).length;
+    // only seats count — an unseated newcomer's vote is stored but never scored,
+    // and counting it here reads as "6 of 5 voted"
+    const cast = Object.keys(votes).filter(id => (round.order || []).includes(id)).length;
     return head + `
       <div class="eyebrow">${iAmMod ? "Your statement" : esc(modName) + " says"}${
         round.category ? " · " + esc(round.category) : ""}</div>
@@ -773,6 +861,7 @@ function game(){
         <button class="vote d ${S.myVote === "d" ? "on" : ""} ${S.myVote === "a" ? "dim" : ""}" data-vote="d">Disagree</button>
       </div>
       ${S.myVote ? `<div class="setup">Locked in. You can change it until the reveal.</div>` : ""}
+      ${S.note ? `<div class="err">${esc(S.note)}</div>` : ""}
 
       <div class="grow"></div>
       ${iAmMod ? `
@@ -851,6 +940,7 @@ function bind(){
     b.onclick = () => { S.pick = b.dataset.cat; render(); });
 
   on("retryauth", retryAuth);
+  on("share",  shareRoom);
   on("mic",    dictate);
   on("lock",   () => lockCategory(S.pick));
   on("send",   submitTopic);

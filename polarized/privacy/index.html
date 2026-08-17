@@ -53,17 +53,20 @@
   <h1 class="logo">POLARIZED</h1>
   <div class="rule"><i></i><i></i></div>
 
-  <div class="stamp">Privacy policy · Last updated 11 August 2026</div>
-  <p>Polarized is a browser party game. There are no accounts, no sign-in, and
-  no email addresses. This page describes everything the game stores.</p>
+  <div class="stamp">Privacy policy · Last updated 17 August 2026</div>
+  <p>Polarized is a browser party game. There is no account to create, no
+  password, and no email address. This page describes everything the game
+  stores.</p>
 
   <h2>What we collect</h2>
   <ul>
     <li><b>The display name you type</b> when you join a room. Call yourself
     whatever you like — it is shown to everyone else in the room.</li>
-    <li><b>A random player ID</b> generated in your browser to tell players
-    apart within a room. It is not tied to you, your device, or any other
-    room.</li>
+    <li><b>An anonymous player ID.</b> When you open the game your browser is
+    issued an anonymous identity by Supabase, our database provider. It is what
+    lets the server tell players apart and stop anyone editing somebody else's
+    vote. It carries no name, no email address and no password, you never see
+    it, and it is not linked to you, your device, or any other room.</li>
     <li><b>Your votes</b> — agree or disagree — and the statements the
     moderator types.</li>
     <li><b>The room code</b> and the scores for that game.</li>
@@ -72,24 +75,28 @@
   and we run no analytics or tracking software of our own.</p>
 
   <h2>What stays on your device</h2>
-  <p>The game keeps your player ID, your display name, and the code of the room
-  you are in, in your browser's local storage. That is what puts you back in
-  your seat if you reload the page or your phone dies mid-game. Clearing your
-  browser data removes it.</p>
+  <p>The game keeps your player ID, your display name, the code of the room you
+  are in, and the vote you cast in the current round, in your browser's local
+  storage. That is what puts you back in your seat if you reload the page or
+  your phone dies mid-game. Clearing your browser data removes it.</p>
 
   <h2>Who can see your votes</h2>
   <p>Votes are hidden until the moderator reveals the round. After the reveal,
   everyone in the room sees who voted which way — that is the game. Treat a
   vote as visible to the room, not as anonymous.</p>
-  <p>Anyone holding a room's four-letter code can join that room. Codes are
-  short by design, so do not put anything in a statement you would mind a
-  stranger reading.</p>
+  <p>Anyone holding a room's four-letter code — or the invite link that carries
+  it — can join that room. Codes are short by design, so do not put anything in
+  a statement you would mind a stranger reading.</p>
 
   <h2>Retention and deletion</h2>
   <p>Rooms are temporary. A room and everything attached to it — players,
   votes, statements, and scores — is deleted automatically within 24 hours of
-  the room being created. There is nothing to log into and nothing kept
-  afterwards.</p>
+  the room being created.</p>
+  <p>The anonymous ID described above outlives the room, because it is what
+  puts you back in your seat if you reload. It is deleted automatically once it
+  has gone seven days without being used. Losing it costs you nothing: the next
+  time you open the game your browser is simply issued a new one. There is
+  nothing to log into and nothing else kept.</p>
   <p>To have a room removed sooner, email
   <a href="mailto:privacy@planitnow.us">privacy@planitnow.us</a> with the room
   code.</p>
@@ -97,8 +104,8 @@
   <h2>Service providers</h2>
   <p>Each of these processes data only to provide its part of the game:</p>
   <ul>
-    <li><b>Supabase</b> — database hosting</li>
-    <li><b>Cloudflare Pages</b> — website hosting</li>
+    <li><b>Supabase</b> — database hosting and the anonymous IDs above</li>
+    <li><b>Cloudflare</b> — website hosting</li>
     <li><b>Google AdSense</b> — advertising</li>
   </ul>
   <p>The page also loads fonts from Google Fonts and the Supabase client

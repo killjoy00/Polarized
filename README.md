@@ -18,7 +18,7 @@ separate phones make hidden voting free.
 
 One static `index.html`. No build step, no framework, no bundler. Vanilla JS
 rendering template literals into a single `#app` div. Supabase from CDN.
-~650 lines including CSS. Served by a git-connected Cloudflare Worker: a push
+~970 lines including CSS. Served by a git-connected Cloudflare Worker: a push
 to `main` deploys `polarized/` as static assets, no build step involved.
 
 ```
@@ -66,6 +66,15 @@ statement. `round.cats` holds the six categories the room is choosing from and
 `round.used` the ones already spent — both are room state, so everyone sees the
 same board.
 
+`round.order` is the seating. It is built at `startGame()` and can still grow:
+`nextRound()` reconciles it against `pol_players` and seats anyone who arrived
+late, at the end, in join order. That happens in `nextRound()` and nowhere else
+because only the moderator may write `round`. A newcomer waits out the round in
+progress — they are shown the standings and offered no vote, since a vote from
+an unseated player is stored and never scored. Seating them lengthens the game,
+which is `seats × laps`; the one exception is the final round, where a late
+arrival is not seated at all rather than extending a game that was ending.
+
 Identity is an anonymous Supabase user. The browser calls `signInAnonymously()`
 on load and uses `auth.uid()` as its player id, which is what gives the write
 policies something to compare against.
@@ -96,7 +105,9 @@ only in `round.revealed`, written by `pol_reveal()` when the moderator reveals.
 2. **Sync is Supabase Realtime plus a 2-second polling backstop.** Realtime was
    unreliable in development; polling is what actually made the lobby work. Do
    not remove the poll without verifying realtime end to end on real devices
-   first.
+   first. Because both call `refresh()`, several can be in flight at once —
+   `refreshSeq` drops any reply that a newer one has already overtaken. Without
+   it a slow reply lands last and drags the screen back to the previous round.
 
 3. **`render()` compares a JSON signature of state and returns early when
    nothing changed, and saves/restores focus and cursor position when it does
@@ -107,7 +118,9 @@ only in `round.revealed`, written by `pol_reveal()` when the moderator reveals.
    no table-wide `SELECT` on `pol_votes`, and Postgres demands one for
    `INSERT ... ON CONFLICT DO UPDATE` — an upsert fails with `42501` even
    though every column it touches is granted. Collapsing this back into an
-   `.upsert()` breaks voting outright.
+   `.upsert()` breaks voting outright. Both writes are error-checked and the
+   screen rolls back if they fail: nobody can read `choice` back, so a lost
+   vote is otherwise invisible to the player who cast it.
 
 5. **Scoring lives in `pol_reveal()`, not the browser.** `score()` in
    `index.html` still draws the reveal screen from `round.revealed`, so the two
@@ -247,6 +260,23 @@ this project has lost time to predictions twice.
 - **Keep-alive.** `.github/workflows/keepalive.yml` pings daily. GitHub disables
   scheduled workflows in repos idle 60 days; a Cloudflare Worker cron has no
   such rule if that ever bites.
+- **A vanished moderator strands the room.** Verified: with the moderator gone,
+  no seated player can write `round` and none can reveal — there is no timeout
+  and no host override, and `pol_rooms_clear` only lets the moderator delete. A
+  reload recovers, since the session persists, so this needs a real
+  disappearance. Judged expected behaviour for now: the moderator leaving ends
+  the game. An escape hatch — an RPC letting any seated player pass the gavel
+  after an idle timeout — is the fix if that changes.
+- **`pol_reveal()` accepts a caller with no session.** The guard in
+  [`rls-1-reveal-function.sql`](supabase/rls-1-reveal-function.sql) reads
+  `if auth.uid() is not null and ...`, which was the deliberate escape hatch
+  while the world was still permissive. rls-3 is applied now, so anyone holding
+  a live room code and the publishable key can end a round early — the
+  moderator loses the pairs from whoever had not voted yet. Confirmed against
+  the live project with a throwaway room. Judged low stakes for a party game
+  and left alone; the fix is dropping `auth.uid() is not null and` and granting
+  execute to `authenticated` only, which was tested locally and keeps scoring
+  parity at 200/200.
 
 **Worth knowing**
 
@@ -269,7 +299,22 @@ use a throwaway room code.
 
 The SQL does not need Supabase to be checked. A local PostgreSQL 16 with two
 stand-ins — roles `anon` and `authenticated`, and an `auth.uid()` reading
-`request.jwt.claim.sub` — takes `setup.sql` and all three `rls-*.sql` files as
+`request.jwt.claim.sub` — takes `setup.sql` and all four `rls-*.sql` files as
 they are, which is how the scoring change and every policy in `rls-3` were
 verified before anyone touched the live project. `set role authenticated; set
-request.jwt.claim.sub = '<uuid>';` is enough to play a policy through.
+request.jwt.claim.sub = '<uuid>';` is enough to play a policy through. Use `set
+role`, never `set local role`: outside a transaction the latter is a no-op and
+silently leaves you as the owner, who bypasses RLS entirely.
+
+The browser can be driven without network access too. Chromium is installed but
+cannot reach the internet through the agent proxy, so: serve `index.html` from a
+fake `https://` origin with Playwright's `ctx.route()`, fulfil the jsDelivr
+bundle from a copy fetched with `curl`, and relay every `supabase.co` request
+through node `fetch` — which does work — back into the page with an
+`access-control-allow-origin` header. The realtime websocket stays dead under
+that setup, so the game runs on the 2s poll, which is a fair test of invariant 2
+rather than a broken one. Two traps worth knowing: `innerText` applies CSS
+`text-transform`, so every `.eyebrow` and `.mono` string comes back uppercased —
+match on `textContent`; and `document.body.textContent` includes the inline
+`<script>` source, so assertions must be scoped to `#app` or they match the
+template literals rather than the screen.
